@@ -149,7 +149,7 @@ def http_post_requests_with_custom_ssl_context(trust_manager, key_manager_filepa
 
     return response
 
-def generateCertificateRequest(priv_key, commomName, countryName, organizationName, registration_number, email):
+def generateCertificateRequest(priv_key, commomName, countryName, organizationName, registration_number, email,dns_Name):
 
     subject = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, commomName),
@@ -158,7 +158,7 @@ def generateCertificateRequest(priv_key, commomName, countryName, organizationNa
         x509.NameAttribute(NameOID.SERIAL_NUMBER, registration_number),
     ])
 
-    alt_name_extension = x509.SubjectAlternativeName([x509.RFC822Name(email)])
+    alt_name_extension = x509.SubjectAlternativeName([x509.RFC822Name(email),x509.DNSName(dns_Name)])
 
     cri = x509.CertificateSigningRequestBuilder().add_extension(alt_name_extension, critical=False).subject_name(subject).sign(priv_key,hashes.SHA256())
 
@@ -179,6 +179,7 @@ def user_relying_party_db(user,relying_party, serial_number, certificate , certi
     organizationName=relying_party.get("Name")
     registration_number=relying_party.get("Registration Number")
     intended_use=relying_party.get("Intended use of European Digital Identity Wallets")
+    dns_Name=relying_party.get("DNS Name")
     RP_serial_number=relying_party.get("Registration Number")
     
     email=relying_party.get("email")
@@ -214,7 +215,7 @@ def user_relying_party_db(user,relying_party, serial_number, certificate , certi
         RP_id=db.insert_relying_party(countryName, organizationName, registration_number, commonName, contact, user_id, log_id)
 
         db.insert_access_certificate(intended_use, certificateString, certificate_issuer, certificate_distinguished_name, 
-                              validity_from, validity_to, serial_number, status, user_id, RP_id, log_id)
+                              validity_from, validity_to, serial_number, dns_Name,status, user_id, RP_id, log_id)
         return None
     
     except Exception as e:

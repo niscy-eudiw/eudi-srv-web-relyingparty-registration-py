@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS `relying_party` (
   `name` varchar(255) NOT NULL,
   `registration_number` varchar(100) DEFAULT NULL,
   `common_name` varchar(255) DEFAULT NULL,
+  `DNS_name` varchar(255) DEFAULT NULL,
   `contacts` text DEFAULT NULL,
   `user_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`relyingParty_id`),
