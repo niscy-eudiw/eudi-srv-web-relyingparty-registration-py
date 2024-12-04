@@ -215,7 +215,7 @@ def user_relying_party_db(user,relying_party, serial_number, certificate , certi
         RP_id=db.insert_relying_party(countryName, organizationName, registration_number, commonName, contact, user_id, log_id)
 
         db.insert_access_certificate(intended_use, certificateString, certificate_issuer, certificate_distinguished_name, 
-                              validity_from, validity_to, serial_number, dns_Name,status, user_id, RP_id, log_id)
+                              validity_from, validity_to, serial_number, status, dns_Name, user_id, RP_id, log_id)
         return None
     
     except Exception as e:

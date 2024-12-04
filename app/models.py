@@ -127,12 +127,12 @@ def insert_access_certificate(intended_use, certificate, certificate_issuer, cer
 
             insert_query = """
             INSERT INTO access_certificate (intended_use, certificate, certificate_issuer, certificate_distinguished_name, 
-                                            validity_from, validity_to, serial_number, status,DNS_name, user_id, relyingParty_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                            validity_from, validity_to, serial_number, status, DNS_name, user_id, relyingParty_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             cursor.execute(insert_query, (intended_use, certificate, certificate_issuer, certificate_distinguished_name, 
-                                          validity_from, validity_to, serial_number, status,dns_name, user_id, relyingParty_id))
+                                          validity_from, validity_to, serial_number, status, dns_name, user_id, relyingParty_id))
             connection.commit()
 
             
