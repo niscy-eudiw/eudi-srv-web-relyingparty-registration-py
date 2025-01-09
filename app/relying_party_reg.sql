@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `access_certificate` (
   `validity_to` date DEFAULT NULL,
   `serial_number` varchar(100) DEFAULT NULL,
   `status` enum('active','revoke','expired') NOT NULL,
+  `DNS_name` varchar(255) DEFAULT NULL,
   `user_id` int(11) DEFAULT NULL,
   `relyingParty_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`accessCertificate_id`),

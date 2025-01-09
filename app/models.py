@@ -119,7 +119,7 @@ def insert_relying_party(country, name, registration_number, common_name, contac
             connection.close()
 
 def insert_access_certificate(intended_use, certificate, certificate_issuer, certificate_distinguished_name, 
-                              validity_from, validity_to, serial_number, status, user_id, relyingParty_id, log_id):
+                              validity_from, validity_to, serial_number, status, dns_name ,user_id, relyingParty_id, log_id):
     try:
         connection = conn()
         if connection:
@@ -127,12 +127,12 @@ def insert_access_certificate(intended_use, certificate, certificate_issuer, cer
 
             insert_query = """
             INSERT INTO access_certificate (intended_use, certificate, certificate_issuer, certificate_distinguished_name, 
-                                            validity_from, validity_to, serial_number, status, user_id, relyingParty_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                            validity_from, validity_to, serial_number, status, DNS_name, user_id, relyingParty_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             cursor.execute(insert_query, (intended_use, certificate, certificate_issuer, certificate_distinguished_name, 
-                                          validity_from, validity_to, serial_number, status, user_id, relyingParty_id))
+                                          validity_from, validity_to, serial_number, status, dns_name, user_id, relyingParty_id))
             connection.commit()
 
             
