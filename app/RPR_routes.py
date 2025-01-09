@@ -437,6 +437,7 @@ def getpidoid4vp():
         "Registration Number": "string",
         "Contact": "contact",
         "Intended use of European Digital Identity Wallets": "text_area",
+        "DNS Name":"string",
         "Password":"password"
     }
     descriptions = {
@@ -446,6 +447,7 @@ def getpidoid4vp():
         "Registration Number": "Registration number as stated in an official record together with identification data of that official record.",
         "Contact": "Contact details (address, e-mail and phone number) of the relying party.",
         "Intended use of European Digital Identity Wallets": "Intended use of European Digital Identity Wallets, including an indication of the data to be requested by the relying party from users.",
+        "DNS Name":"DNS Name to add to the certificate.",
         "Password":"Password required for P12 file. "
     }
 
@@ -473,10 +475,11 @@ def relying_party_registration():
     organizationName=request.form.get("Name")
     registration_number=request.form.get("Registration Number")
     email=request.form.get("email")
+    dns_Name=request.form.get("DNS Name")
     password=request.form.get("Password")
 
 
-    certificateRequest= generateCertificateRequest(priv_key, commonName, countryName, organizationName, registration_number, email)
+    certificateRequest= generateCertificateRequest(priv_key, commonName, countryName, organizationName, registration_number, email,dns_Name)
     
     certificateRequestString = "-----BEGIN CERTIFICATE REQUEST-----\n"+ base64.b64encode(certificateRequest).decode("utf-8") + "\n"+ "-----END CERTIFICATE REQUEST-----"
     certificateAuthorityName = getCertificateAuthorityName(countryName)
