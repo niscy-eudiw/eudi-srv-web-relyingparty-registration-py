@@ -384,13 +384,14 @@ def getpidoid4vp():
 
     if "response_code" in request.args and "session_id" in request.args:
 
+        print(request.args)
         response_code = request.args.get("response_code")
         presentation_id = oid4vp_requests[request.args.get("session_id")]["response"]["presentation_id"]
         session["session_id"]=request.args.get("session_id")
         if oid4vp_requests[request.args.get("session_id")]["certificate_List"] !=None:
             session["certificate_List"]=True
         url = (
-            "https://" + cfgserv.url_verifier +"/ui/presentations"
+            "https://" + cfgserv.url_verifier +"/ui/presentations/"
             + presentation_id
             + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
             + "&response_code=" + response_code
@@ -398,7 +399,7 @@ def getpidoid4vp():
 
     elif "presentation_id" in request.args:
         presentation_id = request.args.get("presentation_id")
-        url = "https://" + cfgserv.url_verifier +"/ui/presentations" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+        url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
 
     headers = {
     'Content-Type': 'application/json',
