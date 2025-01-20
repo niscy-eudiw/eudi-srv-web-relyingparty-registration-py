@@ -102,7 +102,7 @@ def initial_page():
 @rpr.route("/authentication", methods=["GET","POST"])
 def authentication():
 
-    url = "https://dev.verifier-backend.eudiw.dev/ui/presentations"
+    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
     payload ={
         "type": "vp_token",
         "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
@@ -176,7 +176,7 @@ def authentication():
     response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
 
     QR_code_url = (
-        "eudi-openid4vp://dev.verifier-backend.eudiw.dev?client_id="
+        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
         + response["client_id"]
         + "&request_uri="
         + response["request_uri"]
@@ -192,7 +192,7 @@ def authentication():
     response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
 
     deeplink_url = (
-        "eudi-openid4vp://dev.verifier-backend.eudiw.dev?client_id="
+        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
         + response_same_device["client_id"]
         + "&request_uri="
         + response_same_device["request_uri"]
@@ -232,7 +232,7 @@ def authentication():
 @rpr.route("/authentication_List", methods=["GET","POST"])
 def authentication_List():
 
-    url = "https://dev.verifier-backend.eudiw.dev/ui/presentations"
+    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
     payload ={
         "type": "vp_token",
         "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
@@ -306,7 +306,7 @@ def authentication_List():
     response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
 
     QR_code_url = (
-        "eudi-openid4vp://dev.verifier-backend.eudiw.dev?client_id="
+        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
         + response["client_id"]
         + "&request_uri="
         + response["request_uri"]
@@ -322,7 +322,7 @@ def authentication_List():
     response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
 
     deeplink_url = (
-        "eudi-openid4vp://dev.verifier-backend.eudiw.dev?client_id="
+        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
         + response_same_device["client_id"]
         + "&request_uri="
         + response_same_device["request_uri"]
@@ -365,7 +365,7 @@ def pid_authorization_get():
 
     presentation_id= request.args.get("presentation_id")
 
-    url = "https://dev.verifier-backend.eudiw.dev/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+    url = "https://" + cfgserv.url_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
     headers = {
     'Content-Type': 'application/json',
     }
@@ -390,7 +390,7 @@ def getpidoid4vp():
         if oid4vp_requests[request.args.get("session_id")]["certificate_List"] !=None:
             session["certificate_List"]=True
         url = (
-            "https://dev.verifier-backend.eudiw.dev/ui/presentations/"
+            "https://" + cfgserv.url_verifier +"/ui/presentations"
             + presentation_id
             + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
             + "&response_code=" + response_code
@@ -398,7 +398,7 @@ def getpidoid4vp():
 
     elif "presentation_id" in request.args:
         presentation_id = request.args.get("presentation_id")
-        url = "https://dev.verifier-backend.eudiw.dev/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+        url = "https://" + cfgserv.url_verifier +"/ui/presentations" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
 
     headers = {
     'Content-Type': 'application/json',
@@ -542,7 +542,6 @@ def download(name):
     p12_file_bytes=p12_temp[name]["response"]
 
     final_name = name.split("_")[0] + ".p12"
-    print(final_name)
     
     extra = {'code': session["session_id"]} 
     logger.info(f"Download p12.", extra=extra)
