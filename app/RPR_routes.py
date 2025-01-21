@@ -198,7 +198,7 @@ def authentication():
         + response_same_device["request_uri"]
     )
 
-    oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry)}})
+    oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry), "certificate_List":False}})
 
 
     # Generate QR code
@@ -384,12 +384,13 @@ def getpidoid4vp():
 
     if "response_code" in request.args and "session_id" in request.args:
 
-        print(request.args)
         response_code = request.args.get("response_code")
         presentation_id = oid4vp_requests[request.args.get("session_id")]["response"]["presentation_id"]
         session["session_id"]=request.args.get("session_id")
-        if oid4vp_requests[request.args.get("session_id")]["certificate_List"] !=None:
-            session["certificate_List"]=True
+
+        if oid4vp_requests[request.args.get("session_id")]["certificate_List"]:
+            if oid4vp_requests[request.args.get("session_id")]["certificate_List"] == True:
+                session["certificate_List"]=True
         url = (
             "https://" + cfgserv.url_verifier +"/ui/presentations/"
             + presentation_id
