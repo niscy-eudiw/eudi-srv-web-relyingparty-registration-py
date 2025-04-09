@@ -473,7 +473,7 @@ def relying_party_registration():
     
     certificateRequestString = "-----BEGIN CERTIFICATE REQUEST-----\n"+ base64.b64encode(certificateRequest).decode("utf-8") + "\n"+ "-----END CERTIFICATE REQUEST-----"
     certificateAuthorityName = getCertificateAuthorityName(countryName)
-    certificateRequestBody = getJsonBody(certificateRequestString, certificateAuthorityName)
+    certificateRequestBody = getJsonBody(certificateRequestString, certificateAuthorityName, countryName)
     postUrl = "https://" + ejbca.cahost + "/ejbca/ejbca-rest-api/v1" + ejbca.endpoint
 
     headers ={
