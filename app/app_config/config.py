@@ -43,7 +43,8 @@ class ConfService:
     #log_dir = "app\logs"
     log_dir = "app/logs"
 
-    url_verifier="verifier-backend.eudiw.dev"
+    url_verifier="verifier-backend.ama.projj.eu"
+    
 
     # log_dir = "/tmp/log"
     # #log_dir = "../../log"
