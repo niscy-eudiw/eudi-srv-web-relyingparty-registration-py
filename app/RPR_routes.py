@@ -422,7 +422,7 @@ def getpidoid4vp():
 
     form_items={
         "Country": "select",
-        "Name": "string",
+        "Organization Name": "string",
         "Common Name": "string",
         "Registration Number": "string",
         "Contact": "contact",
@@ -432,7 +432,7 @@ def getpidoid4vp():
     }
     descriptions = {
         "Country": "Country in which the relying party is established.",
-        "Name": "Name of the relying party as stated in an official record.",
+        "Organization Name": "Organization Name of the relying party as stated in an official record.",
         "Common Name": "Common Name of the Relying Party, in a format suitable for presenting to an end-user.",
         "Registration Number": "Registration number as stated in an official record together with identification data of that official record.",
         "Contact": "Contact details (address, e-mail and phone number) of the relying party.",
@@ -462,7 +462,7 @@ def relying_party_registration():
 
     commonName=request.form.get("Common Name")
     countryName=request.form.get("Country")
-    organizationName=request.form.get("Name")
+    organizationName=request.form.get("Organization Name")
     registration_number=request.form.get("Registration Number")
     email=request.form.get("email")
     dns_Name=request.form.get("DNS Name")
