@@ -162,6 +162,26 @@ keytool -importkeystore -srckeystore [FileIn.p12] -srcstoretype pkcs12 -destkeys
 + First step is authentication with the PID 
 + After authentication, the user has access to all their certificates and has the option to revoke any certificate they hold by clicking the "Revoke" button.
 
+## Run docker
+
+To start Web Relying Party Registration service a docker compose file has been implemented that can be found in `docker` directory.
+
+To start the docker compose environment
+
+```
+# From project root directory 
+cd docker
+docker-compose up -d
+```
+
+To stop the docker compose environment
+
+```
+# From project root directory 
+cd docker
+docker-compose down
+````
+
 ## Configuration
 
 The Web Relying Party Registration application can be configured using the following environment variables:
