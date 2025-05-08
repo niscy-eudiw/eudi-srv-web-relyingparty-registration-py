@@ -186,7 +186,7 @@ def user_relying_party_db(user,relying_party, serial_number, certificate , certi
 
     commonName=relying_party.get("Common Name")
     countryName=relying_party.get("Country")
-    organizationName=relying_party.get("Name")
+    organizationName=relying_party.get("Organization Name")
     registration_number=relying_party.get("Registration Number")
     intended_use=relying_party.get("Intended use of European Digital Identity Wallets")
     dns_Name=relying_party.get("DNS Name")
