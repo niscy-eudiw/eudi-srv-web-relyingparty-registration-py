@@ -164,7 +164,7 @@ keytool -importkeystore -srckeystore [FileIn.p12] -srcstoretype pkcs12 -destkeys
 
 ## Run docker
 
-To start Web Relying Party Registration service a docker compose file has been implemented that can be found in `docker` directory.
+To start Web Relying Party Registration service a docker compose file, [docker-compose.yml](docker/docker-compose.yml), has been implemented that can be found in `docker` directory.
 
 To start the docker compose environment
 
