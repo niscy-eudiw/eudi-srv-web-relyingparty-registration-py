@@ -91,7 +91,7 @@ def validate_vp_token(response_json):
 
     else:
 
-        mdoc = response_json["vp_token"]["query_0"]
+        mdoc = response_json["vp_token"]["query_0"][0]
         
         mdoc_ver = None
 

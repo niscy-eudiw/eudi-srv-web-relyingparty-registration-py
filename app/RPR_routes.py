@@ -392,7 +392,7 @@ def getpidoid4vp():
     if error == True:
         return error_msg
     
-    mdoc_json = cbor2elems(response.json()["vp_token"]["query_0"] + "==")
+    mdoc_json = cbor2elems(response.json()["vp_token"]["query_0"][0] + "==")
 
     attributesForm={}
 
