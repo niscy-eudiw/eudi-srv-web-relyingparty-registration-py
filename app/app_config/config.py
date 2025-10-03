@@ -43,9 +43,9 @@ class ConfService:
     deffered_expiry = 100
 
     #log_dir = "app\logs"
-    log_dir = os.getenv("LOG_PATH", "app/log")
+    log_dir = os.getenv("LOG_PATH", "app/logs")
 
-    url_verifier=os.getenv("VERIFIER","verifier-backend.eudiw.dev")
+    url_verifier=os.getenv("VERIFIER","dev.verifier-backend.eudiw.dev")
     
 
     # log_dir = "/tmp/log"

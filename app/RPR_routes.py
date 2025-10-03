@@ -162,6 +162,7 @@ def authentication():
     }
 
     response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
+    
 
     QR_code_url = (
         "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
