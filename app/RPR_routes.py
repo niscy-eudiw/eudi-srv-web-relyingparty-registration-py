@@ -28,6 +28,7 @@ import io
 import json
 import os
 import re
+import time
 from uuid import uuid4
 import uuid
 import cbor2
@@ -54,7 +55,7 @@ import ssl
 from pycose.messages import Sign1Message
 from pycose.keys import CoseKey
 from pycose.headers import Algorithm, KID
-from pycose.algorithms import EdDSA
+from pycose.algorithms import EdDSA, Es256
 from pycose.keys.curves import Ed25519
 from pycose.keys.keyparam import KpKty, OKPKpD, OKPKpX, KpKeyOps, OKPKpCurve
 from pycose.keys.keytype import KtyOKP
@@ -70,6 +71,8 @@ import urllib3
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.utils import Prehashed
 from cryptography import x509
 from cryptography.x509.oid import NameOID, ExtensionOID
 from cryptography.x509 import GeneralName, GeneralNames
@@ -466,7 +469,7 @@ def add_legal_person_db():
     return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
 
 @rpr.route('/legal_person/update_legal_entities', methods=["GET", "POST"])
-def update_legal_entities():
+def legal_person_update_legal_entities():
 
     legal_person_id = request.args.get("id")
     legal_entities = ast.literal_eval(request.args.get("checks"))
@@ -484,7 +487,7 @@ def update_legal_entities():
     return redirect('/person/list')
 
 @rpr.route('/legal_person/list')
-def person_list():
+def legal_person_list():
         
     temp_user_id = session['temp_user_id']
     user = session[temp_user_id]
@@ -841,6 +844,108 @@ def update_intended_uses():
 
     return redirect('/RP/list')
 
+@rpr.route("/RP/certificate", methods=["GET", "POST"])
+def relying_party_access_certificate():
+
+    modulus=crypto.key_size
+    exponent=crypto.exponent
+    priv_key = ec.generate_private_key(ec.SECP256R1(), default_backend() )
+
+    RP_id = request.args.get("id")
+
+    #dados da RP
+    RP=get_RP_data()
+    #commonName
+    tradeName=RP["trade_name"]
+    #uniformResourceIdentifier
+    supportURI=RP["supportURI"]
+
+    #se user for legal person
+    #dados da legal person
+    user=get_user()
+    #organizationName
+    legalName=user["legalName"]
+
+    #se user for natural person
+    user=get_user()
+    givenName=user["givenName"]
+    #surname
+    surname=user["familyName"]
+
+    #dados da legalEntity
+    legal_entity=get_legal_entity()
+    #caso for natural person é serialNumber no caso de uma legal person organizationIdentifier
+    identifier=legal_entity["identifier"]
+    country= legal_entity["country"]
+    email= legal_entity["email"]
+    phone= legal_entity["phone"]
+
+
+    #como as TSLs, ex: lang en, description=test  
+    servicesDescription=request.form.get("Services Description")#como as TSLs, ex: lang en, description=test  
+    entitlement=request.form.get("Entitlement")
+    # verificar legal entity se é pertence ao sector público, se sim True, se não False
+    isPSB= False
+    password=request.form.get("Password")
+
+
+    certificateRequest= generateCertificateRequest(priv_key, commonName, countryName, organizationName, registration_number, email,dns_Name)
+    
+    certificateRequestString = "-----BEGIN CERTIFICATE REQUEST-----\n"+ base64.b64encode(certificateRequest).decode("utf-8") + "\n"+ "-----END CERTIFICATE REQUEST-----"
+    certificateAuthorityName = getCertificateAuthorityName(countryName)
+    certificateRequestBody = getJsonBody(certificateRequestString, certificateAuthorityName, countryName)
+    postUrl = "https://" + ejbca.cahost + "/ejbca/ejbca-rest-api/v1" + ejbca.endpoint
+
+    headers ={
+        "Content-Type": "application/json",
+        'Authorization': 'Bearer test',
+    }
+
+    clientP12ArchiveFilepath = ejbca.clientP12ArchiveFilepath
+    clientP12ArchivePassword = ejbca.clientP12ArchivePassword
+    ManagementCA = ejbca.managementCA
+
+    trustCA= getTrustManagerOfCACertificate(ManagementCA)
+
+    response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
+
+    response = response.json()
+    
+    certificate_bytes=base64.b64decode(response["certificate"])
+
+    certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
+
+    serial_number=response["serial_number"]
+
+    user_relying_party_db(user,request.form, serial_number, certificate,response["certificate"], session["session_id"])
+
+    p12=pkcs12.serialize_key_and_certificates(
+        name=commonName.encode("utf-8"),key=priv_key,cert=certificate, cas=list().append(trustCA),
+        encryption_algorithm=serialization.BestAvailableEncryption(password.encode("utf-8"))
+    )
+
+    tag = uuid.uuid4()
+
+    file_name = commonName + "_" + str(tag)
+
+    p12_temp.update({file_name:{"response": p12, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry)}})
+
+    cert = certificate.subject.rfc4514_string().split(",")
+    dic = {parte.split("=")[0]: parte for parte in cert}
+    order = [dic.get("C"), dic.get("O"), dic.get("CN")]
+    aux = [v for k, v in dic.items() if k not in ["C", "O", "CN"]]
+
+    cert_subject_rfc4514_string = ",".join(order + aux)
+
+    certificate_presentation={
+        "certificate_issuer":certificate.issuer.rfc4514_string(),
+        "certificate_distinguished_name":cert_subject_rfc4514_string,
+        "validity_from":certificate.not_valid_before_utc,
+        "validity_to":certificate.not_valid_after_utc,
+    }
+
+    return render_template('downloadPage.html', attributes=certificate_presentation, download_url= "/Download/"+ file_name)
+
 @rpr.route('/RP/list', methods=['GET','POST'])
 def RP_list():
 
@@ -991,6 +1096,202 @@ def intended_use_edit_db():
         return ("erro")
     else:
         return redirect('/intended_use/list')
+    
+@rpr.route("/intended_use/certificate", methods=["GET", "POST"])
+def intended_use_registration_certificate():
+
+    # RP_data=get_RP_db_data()
+    # intended_use_data= get_intended_use_data()
+    # legal_entity_data= get_legal_entity_data()
+    # credentials_data=get_credential_data()
+
+    # #if legal person
+    # legal_person_data=get_legal_person_data()
+
+    # #if natural person
+    # natural_person_data= get_natural_person_data()
+
+    iat= int(time.time())
+
+    # name=RP_data["tradeName"]
+    # purpose=intended_use_data["purpose"]
+    # info_uri=legal_entity_data["info_uri"]
+    # country=legal_entity_data["country"]
+    
+    # #if legal_person
+    # legal_name=legal_person_data["legal_name"]
+
+    # #if natural_person
+    # given_name=natural_person_data["given_name"]
+    # family_name=natural_person_data["family_name"]
+
+    # id=legal_entity_data["identifier"]
+    # privacy_policy=intended_use_data["privacyPolicy"]
+
+    # # definir de acordo com os dados do certificado
+    # # policy_id=certificate_policy_id
+    # # certificate_policy=certificate_URI
+
+    # entitlement=RP_data["entitlement"]
+    # providesAttestations=RP_data["providesAttestations"]
+    # public_body=RP_data["isPSB"]
+    # service=RP_data["srvDescription"]
+    # #A URI to a status list presenting information about validity of the WRPRC. 
+    # #status=
+
+    # #se utiliza intermediário
+    # #act
+
+    json_header = { "typ": "rc-wrp+jwt",
+                    "alg": "ES256", 
+                    "b64": "true", 
+                    "cty": ["b64"], "x5c": [],}
+    
+    json_payload = { "name": "Example GmbH",
+                     "purpose": [ { "lang": "en-US", "value": "Required for checking the minimum age" }, { "lang": "de-DE", "value": "Benötigt für die Überprüfung des Mindestalters" } ], 
+                     "info_uri": "https://example.com",
+                    "country": "DE",
+                    "sub": { "legal_name": "Example GmbH",
+                                "id": "LEIXG-529900T8BM49AURSDO55" },
+                    "privacy_policy": "https://example-company.com/en/privacy-policy", 
+                    "policy_id": [ "0.4.0.19475.3.1" ], 
+                    "certificate_policy": "https://registrat.example.com/certificate-policy", 
+                    "iat": iat, 
+                    "credentials": [
+                        { "format": "dc+sd-jwt", "meta": { "vct_values": [ "https://credentials.example.com/identity_credential" ] }, "claims": [ { "path": ["given_name"] }, { "path": ["family_name"] }, { "path": ["address", "street_address"] } ] },
+                        { "format": "dc+sd-jwt", "meta": { "vct_values": [ "https://othercredentials.example/mdl" ] }, "claims": [ { "path": ["given_name"] }, { "path": ["family_name"] }, { "path": ["address", "street_address"] } ] } ],
+                    "entitlements": [ "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider" ],
+                    "provided_attestations": [ { "format": "dc+sd-jwt", "meta": { "vct_values": [ "" ] } } ],
+                    "public_body": False,
+                    "service": [[ { "lang": "en-US", "value": "Bundesagentur für Sprunginnovationen" }, { "lang": "de-DE", "value": "Federal Agency for Breakthrough Innovations" } ]],
+                    "status": { "status_list": { "idx": 0, "uri": "https://example.com/statuslists/1" } }, 
+                    "act": { "sub":{ "id":"DE:EX-987654381" } }
+                    }
+    
+    with open("app/EJBCA/certificate.pem", "rb") as f:
+       cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+
+    base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+    
+    #Jades with b-b profile
+
+    # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
+
+    with open("naoAssinado.json", "w", encoding="utf-8") as f:
+        json.dump(
+            json_payload,
+            f,
+    )
+    
+    with open("naoAssinado.json", "r", encoding="utf-8") as f:
+        teste=json.load(f)
+        
+    base64_payload=base64.b64encode(json.dumps(json_payload).encode()).decode("utf-8")
+
+    
+
+
+    #print(document)
+    payload=json.dumps({
+
+            "documents":[{
+
+                "document": base64_payload,
+                "signature_format": "J",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+
+            } ],
+        "endEntityCertificate": base64_cert,
+        "certificateChain": [
+        ],
+        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
+
+    })
+
+    headers={
+        'Content-Type': 'application/json'
+    }
+
+    calculate_hash=requests.post(url=cfgserv.sca_signer_url+"/signatures/calculate_hash",headers=headers, data=payload)
+
+    #print(calculate_hash.json())
+    #print(calculate_hash.json()["hashes"])
+
+    hash = calculate_hash.json()["hashes"]
+
+    signature_date = calculate_hash.json()["signature_date"]
+
+    with open("app/EJBCA/private_key.pem", "rb") as f:
+        private_key = serialization.load_pem_private_key(
+        f.read(),
+        password=None,
+        backend=default_backend()
+    )
+
+    signature = private_key.sign(
+        hash[0].encode(),
+        padding.PKCS1v15(),
+        hashes.SHA256()
+    )
+
+    base64_signature= base64.b64encode(signature).decode("utf-8")
+    #print(base64_signature)
+
+    payload = json.dumps({
+        "documents": [
+            {
+                "document": base64_payload,
+                "signature_format": "J",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            }
+        ],
+        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+        "returnValidationInfo": False,
+        "endEntityCertificate": base64_cert,
+        "certificateChain": [
+        ],
+        "signatures":[base64_signature],
+        "date": signature_date
+    }).encode()
+
+    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
+    
+    document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
+
+    # data=json.loads(base64.b64decode(document_with_signature).decode("utf-8"))
+
+    # jwt_payload=data["payload"]
+    # jwt_header=data["signatures"][0]["protected"]
+    # jwt_signature=data["signatures"][0]["signature"]
+
+    # jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
+
+    output_file ="teste.json"
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(
+            json.loads(base64.b64decode(document_with_signature).decode()),
+            f,
+    )
+        
+    #cbor
+
+    cbor_data= cbor2.dumps(json_payload)
+
+    msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
+
+    with open("app/EJBCA/PID-DS-0001_UT.pem", "rb") as f:
+        pem_bytes = f.read()
+
+    cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
+    msg.key = cose_key
+    cose_bytes = msg.encode()
+
+    return cose_bytes.hex()
 
 @rpr.route('/intended_use/list', methods=['GET','POST'])
 def intended_use_list():

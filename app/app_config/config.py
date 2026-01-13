@@ -57,6 +57,8 @@ class ConfService:
         "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL",
         "PL", "PT", "RO", "SK", "SI", "ES", "SE","UT", "EU"]
     
+    sca_signer_url="http://localhost:8086"
+    
 
     # log_dir = "/tmp/log"
     # #log_dir = "../../log"
