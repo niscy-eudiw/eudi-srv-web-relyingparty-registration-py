@@ -1182,14 +1182,15 @@ def intended_use_registration_certificate():
             json_payload,
             f,
     )
-    
-    with open("naoAssinado.json", "r", encoding="utf-8") as f:
-        teste=json.load(f)
-        
-    base64_payload=base64.b64encode(json.dumps(json_payload).encode()).decode("utf-8")
 
+    with open("naoAssinado.json", "rb") as f:
+        file_bytes = f.read()
     
+    # digest = hashes.Hash(hashes.SHA256())
+    # digest.update(file_bytes)
+    # hash_value = digest.finalize()
 
+    base64_payload=base64.b64encode(file_bytes).decode("utf-8")
 
     #print(document)
     payload=json.dumps({
@@ -1232,11 +1233,10 @@ def intended_use_registration_certificate():
 
     signature = private_key.sign(
         hash[0].encode(),
-        padding.PKCS1v15(),
-        hashes.SHA256()
+        ec.ECDSA(hashes.SHA256())
     )
 
-    base64_signature= base64.b64encode(signature).decode("utf-8")
+    base64_signature= base64.b64encode(signature).decode()
     #print(base64_signature)
 
     payload = json.dumps({
@@ -1284,7 +1284,7 @@ def intended_use_registration_certificate():
 
     msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
 
-    with open("app/EJBCA/PID-DS-0001_UT.pem", "rb") as f:
+    with open("app/EJBCA/private_key.pem", "rb") as f:
         pem_bytes = f.read()
 
     cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
