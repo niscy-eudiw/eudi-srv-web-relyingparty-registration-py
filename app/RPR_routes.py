@@ -65,9 +65,15 @@ from binascii import unhexlify
 from pycose.messages import Sign1Message
 import cbor2
 from pycose.keys import EC2Key, CoseKey
+from cryptojwt.jws.jws import JWS
+from cryptojwt.jwk.ec import ECKey
+from cryptojwt.jwk.ec import import_private_ec_key_from_file
 
 import urllib3
-
+from Crypto.Signature import pkcs1_15
+from Crypto.PublicKey import RSA, ECC
+from Crypto.Hash import SHA256
+from Crypto.Signature import DSS
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
@@ -77,7 +83,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID, ExtensionOID
 from cryptography.x509 import GeneralName, GeneralNames
 from cryptography.x509 import SubjectAlternativeName
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.hazmat.primitives.serialization import pkcs12
 from app.EJBCA_and_DB_func import func_get_user_id_by_hash_pid, generateCertificateRequest, get_certificate_data, getCertificateAuthorityName, getJsonBody, getTrustManagerOfCACertificate, http_post_requests_with_custom_ssl_context, update_status, user_relying_party_db
 from requests_pkcs12 import Pkcs12Adapter
@@ -1168,7 +1174,7 @@ def intended_use_registration_certificate():
                     "act": { "sub":{ "id":"DE:EX-987654381" } }
                     }
     
-    with open("app/EJBCA/certificate.pem", "rb") as f:
+    with open("app/EJBCA/ecdsa_cert.pem", "rb") as f:
        cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
@@ -1220,20 +1226,35 @@ def intended_use_registration_certificate():
     #print(calculate_hash.json())
     #print(calculate_hash.json()["hashes"])
 
-    hash = calculate_hash.json()["hashes"]
+    hashes1 = calculate_hash.json()["hashes"]
+
+    #print(hashes1[0])
+
+    base64_string = urllib.parse.unquote(hashes1[0])
+
+    data_to_be_signed = base64.b64decode(base64_string)
+
+    print(data_to_be_signed)
+
+    #print(data_to_be_signed)
+    # hash = base64.urlsafe_b64decode(hashes[0]).
+    # base64.b64decode
 
     signature_date = calculate_hash.json()["signature_date"]
 
-    with open("app/EJBCA/private_key.pem", "rb") as f:
+    with open("app/EJBCA/ecdsa_key.pem", "rb") as f:
         private_key = serialization.load_pem_private_key(
         f.read(),
         password=None,
         backend=default_backend()
     )
 
+    # key=ECC.import_key(private_key)
+
+    # signature = DSS.new(key).sign(data_to_be_signed)
     signature = private_key.sign(
-        hash[0].encode(),
-        ec.ECDSA(hashes.SHA256())
+        data_to_be_signed,
+        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
     )
 
     base64_signature= base64.b64encode(signature).decode()
@@ -1276,7 +1297,7 @@ def intended_use_registration_certificate():
         json.dump(
             json.loads(base64.b64decode(document_with_signature).decode()),
             f,
-    )
+        )
         
     #cbor
 
@@ -1602,3 +1623,86 @@ def Logout():
     session.clear()
 
     return render_template('initial_page.html', redirect_url= cfgserv.service_url, pid_auth = cfgserv.service_url + "authentication", certificateList=cfgserv.service_url + "authentication_List")
+
+@rpr.route("/request_RP_data", methods=["GET"])
+def request_RP_data():
+
+    #ter dados em memória ou ficheiro para não fazer chamadas á BD. Atualizar de x em x tempo 
+
+    # registration_number= request.args.get("registration_number")
+    # name=request.args.get("name")
+    # privacy_policy_url=request.args.get("privacy_policy_url")
+    # entitlement=request.args.get("entitlement")
+    # intermediary_association=request.args.get("intermediary_association")
+    # acting_on_behalf_of=request.args.get("acting_on_behalf_of")
+    # limit=request.args.get("limit", default=20, type=int)
+
+    # results=RPs_BD
+    
+    # if name:
+    #     name_lower = name.lower()
+    #     results = [
+    #         u for u in results
+    #         if name_lower in u["name"].lower()
+    #     ]
+
+    # if registration_number:
+
+    #     results = [
+    #         u for u in results
+    #         if registration_number in u["registration_number"]
+    #     ]
+    
+    # if privacy_policy_url:
+
+    #     results = [
+    #         u for u in results
+    #         if registration_number in u["registration_number"]
+    #     ]
+
+    # if entitlement:
+
+    #     results = [
+    #         u for u in results
+    #         if registration_number in u["registration_number"]
+    #     ]
+
+    # if intermediary_association:
+
+    #     intermediary_association_lower = intermediary_association.lower()
+    #     results = [
+    #         u for u in results
+    #         if intermediary_association_lower in u["intermediary_association"].lower()
+    #     ]
+
+    # if acting_on_behalf_of:
+
+    #     acting_on_behalf_of_lower = acting_on_behalf_of.lower()
+    #     results = [
+    #         u for u in results
+    #         if acting_on_behalf_of_lower in u["acting_on_behalf_of"].lower()
+    #     ]
+
+    # results = results[:limit]
+
+    results={
+        "teste":"test"
+    }
+
+    final_result= json.dumps(results)
+
+    with open("app/EJBCA/ecdsa_key.pem", "rb") as f:
+        ec_key = serialization.load_pem_private_key(
+        f.read(),
+        password=None,
+        backend=default_backend()
+    )
+        
+    key = import_private_ec_key_from_file('app/EJBCA/ecdsa_key.pem')
+    ec_key = ECKey(priv_key=key)
+
+    jws = JWS(final_result, alg="ES256")
+
+    signed_jws = jws.sign_json([ec_key])
+
+    return signed_jws
