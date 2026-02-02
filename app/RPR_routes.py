@@ -41,6 +41,7 @@ from flask import (
     render_template,
     request,
     send_file,
+    send_from_directory,
     session,
     url_for,
     jsonify,
@@ -1706,3 +1707,7 @@ def request_RP_data():
     signed_jws = jws.sign_json([ec_key])
 
     return signed_jws
+
+@rpr.route("/static/swagger.json")
+def swagger_static():
+    return send_from_directory("static", "swagger.json")
