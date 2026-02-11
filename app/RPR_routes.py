@@ -19,12 +19,16 @@
 This rpr_routes.py file is the blueprint of the Web RelyingParty Registration service.
 """
 
+import ast
 import base64
 import binascii
+from collections import defaultdict
 from datetime import datetime, timedelta
 import io
 import json
 import os
+import re
+import time
 from uuid import uuid4
 import uuid
 import cbor2
@@ -37,6 +41,7 @@ from flask import (
     render_template,
     request,
     send_file,
+    send_from_directory,
     session,
     url_for,
     jsonify,
@@ -51,7 +56,7 @@ import ssl
 from pycose.messages import Sign1Message
 from pycose.keys import CoseKey
 from pycose.headers import Algorithm, KID
-from pycose.algorithms import EdDSA
+from pycose.algorithms import EdDSA, Es256
 from pycose.keys.curves import Ed25519
 from pycose.keys.keyparam import KpKty, OKPKpD, OKPKpX, KpKeyOps, OKPKpCurve
 from pycose.keys.keytype import KtyOKP
@@ -61,17 +66,25 @@ from binascii import unhexlify
 from pycose.messages import Sign1Message
 import cbor2
 from pycose.keys import EC2Key, CoseKey
+from cryptojwt.jws.jws import JWS
+from cryptojwt.jwk.ec import ECKey
+from cryptojwt.jwk.ec import import_private_ec_key_from_file
 
 import urllib3
-
+from Crypto.Signature import pkcs1_15
+from Crypto.PublicKey import RSA, ECC
+from Crypto.Hash import SHA256
+from Crypto.Signature import DSS
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.utils import Prehashed
 from cryptography import x509
 from cryptography.x509.oid import NameOID, ExtensionOID
 from cryptography.x509 import GeneralName, GeneralNames
 from cryptography.x509 import SubjectAlternativeName
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.hazmat.primitives.serialization import pkcs12
 from app.EJBCA_and_DB_func import func_get_user_id_by_hash_pid, generateCertificateRequest, get_certificate_data, getCertificateAuthorityName, getJsonBody, getTrustManagerOfCACertificate, http_post_requests_with_custom_ssl_context, update_status, user_relying_party_db
 from requests_pkcs12 import Pkcs12Adapter
@@ -96,7 +109,7 @@ rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), '
 @rpr.route('/', methods=['GET','POST'])
 def initial_page():
 
-    return render_template('initial_page.html', redirect_url= cfgserv.service_url, pid_auth = cfgserv.service_url + "authentication", certificateList=cfgserv.service_url + "authentication_List")
+    return render_template('initial_page.html', redirect_url= cfgserv.service_url, pid_auth = cfgserv.service_url + "authentication")
 
 
 @rpr.route("/authentication", methods=["GET","POST"])
@@ -171,141 +184,25 @@ def authentication():
         + response["request_uri"]
     )
 
-    payload_sameDevice=payload
+    
     session["session_id"]=str(uuid.uuid4())
     session["certificate_List"]=False
 
-    payload_sameDevice.update({"wallet_response_redirect_uri_template":cfgserv.service_url +
-                                                       "getpidoid4vp?response_code={RESPONSE_CODE}&session_id=" + session["session_id"]})
+    # payload_sameDevice=payload
 
-    response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
+    # payload_sameDevice.update({"wallet_response_redirect_uri_template":cfgserv.service_url +
+    #                                                    "getpidoid4vp?response_code={RESPONSE_CODE}&session_id=" + session["session_id"]})
 
-    deeplink_url = (
-        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
-        + response_same_device["client_id"]
-        + "&request_uri="
-        + response_same_device["request_uri"]
-    )
+    # response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
 
-    oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry), "certificate_List":False}})
+    # deeplink_url = (
+    #     "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
+    #     + response_same_device["client_id"]
+    #     + "&request_uri="
+    #     + response_same_device["request_uri"]
+    # )
 
-
-    # Generate QR code
-    # img = qrcode.make("uri")
-    # QRCode.print_ascii()
-
-    qrcode = segno.make(QR_code_url)
-    out = io.BytesIO()
-    qrcode.save(out, kind='png', scale=3)
-
-    """ qrcode.to_artistic(
-        background=cfgtest.qr_png,
-        target=out,
-        kind="png",
-        scale=4,
-    ) """
-    # qrcode.terminal()
-    # qr_img_base64 = qrcode.png_data_uri(scale=4)
-
-    qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
-        "utf-8"
-    )
-
-    return render_template(
-        "pid_login_qr_code.html",
-        url_data=deeplink_url,
-        qrcode=qr_img_base64,
-        presentation_id=response["transaction_id"],
-        redirect_url= cfgserv.service_url
-    )
-@rpr.route("/authentication_List", methods=["GET","POST"])
-def authentication_List():
-
-    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
-    payload ={
-        "type": "vp_token",
-        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
-        "dcql_query": {
-            "credentials": [
-            {
-                "id": "query_0",
-                "format": "mso_mdoc",
-                "meta": {
-                "doctype_value": "eu.europa.ec.eudi.pid.1"
-                },
-                "claims": [
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "family_name"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "given_name"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "birth_date"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "issuing_authority"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "issuing_country"
-                    ],
-                    "intent_to_retain": False
-                }
-                ]
-            }
-            ]
-        }
-    }
-
-
-    headers = {
-        "Content-Type": "application/json",
-    }
-
-    response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
-
-    QR_code_url = (
-        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
-        + response["client_id"]
-        + "&request_uri="
-        + response["request_uri"]
-    )
-
-    payload_sameDevice=payload
-    session["session_id"]=str(uuid.uuid4())
-    session["certificate_List"]=True
-
-    payload_sameDevice.update({"wallet_response_redirect_uri_template":cfgserv.service_url +
-                                                       "getpidoid4vp?response_code={RESPONSE_CODE}&session_id=" + session["session_id"]})
-
-    response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
-
-    deeplink_url = (
-        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
-        + response_same_device["client_id"]
-        + "&request_uri="
-        + response_same_device["request_uri"]
-    )
-
-    oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry), "certificate_List":True}})
+    # oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry), "certificate_List":False}})
 
 
     # Generate QR code
@@ -331,7 +228,7 @@ def authentication_List():
 
     return render_template(
         "pid_login_qr_code.html",
-        url_data=deeplink_url,
+        url_data="deeplink_url",
         qrcode=qr_img_base64,
         presentation_id=response["transaction_id"],
         redirect_url= cfgserv.service_url
@@ -403,38 +300,1133 @@ def getpidoid4vp():
 
     temp_user_id=str(uuid.uuid4())
     session[temp_user_id]= attributesForm
+    session["temp_user_id"] =temp_user_id
 
-    if session["certificate_List"]== True:
-        return certificate_List(temp_user_id)
+    #check user
+    return redirect(url_for('RPR.menu_RP_user'))
+    
+
+@rpr.route("/user_auth", methods=["GET", "POST"])
+def user_auth():
+    
+    temp_user_id = session['temp_user_id']
+
+    #user data
+    user_data_pid = session[temp_user_id]
+
+    # address = request.form.get('address')
+    # email = request.form.get('email')
+    # phone_number = request.form.get('phone_number')
+    # country = request.form.get('Country')
+    # identifier= request.form.get("Identifier")
+    # info_uri = request.form.get("Information URI")
+
+    #introduzir os dados na BD legal entity
+    #check = func.user_db_info(role, operator_name, PostalAddress, electronicAddress, user['id'], session["session_id"])
+
+    return redirect(url_for('RPR.menu_RP_user'))
+    
+@rpr.route('/menu', methods=['GET','POST'])
+def menu_RP_user():
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+@rpr.route('/natural_person/create_natural_person', methods=['GET','POST'])
+def create_natural_person():
 
     attributesForm={}
 
     form_items={
-        "Country": "select",
-        "Organization Name": "string",
-        "Common Name": "string",
-        "Registration Number": "string",
-        "Contact": "contact",
-        "Intended use of European Digital Identity Wallets": "text_area",
-        "DNS Name":"string",
-        "Password":"password"
+        "Given Name":"string",
+        "Family Name":"string",
+        "Date of Birth": "full-date",
+        "Place of Birth": "string",
     }
     descriptions = {
-        "Country": "Country in which the relying party is established.",
-        "Organization Name": "Organization Name of the relying party as stated in an official record.",
-        "Common Name": "Common Name of the Relying Party, in a format suitable for presenting to an end-user.",
-        "Registration Number": "Registration number as stated in an official record together with identification data of that official record.",
-        "Contact": "Contact details (address, e-mail and phone number) of the relying party.",
-        "Intended use of European Digital Identity Wallets": "Intended use of European Digital Identity Wallets, including an indication of the data to be requested by the relying party from users.",
-        "DNS Name":"DNS Name to add to the certificate.",
-        "Password":"Password required for P12 file. "
+        "Given Name":"First name(s) of the natural person including middle name(s) where applicable",
+        "Family Name":"Last name(s) or surnames of the natural person",
+        "Date of Birth": "Date of birth of the natural person",
+        "Place of Birth": "Place of birth of the natural person",
+    }
+    attributesForm.update(form_items)
+
+    return render_template("dynamic-form.html",title="Create Natural Person",title_description="Please enter your Natural Person data.", desc = descriptions, countries = cfgserv.eu_countries ,attributes=attributesForm, redirect_url= cfgserv.service_url + "natural_person/add_natural_person_db")
+
+@rpr.route('/natural_person/add_natural_person_db', methods=['GET','POST'])
+def add_natural_person_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    given_name= request.form.get("Given Name")
+    family_name=request.form.get("Family Name")
+    birthdate=request.form.get("Date of Birth")
+    birthplace=request.form.get( "Place of Birth")
+
+    #add BD
+
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+@rpr.route('/natural_person/update_legal_entities', methods=["GET", "POST"])
+def update_legal_entities():
+
+    natural_person_id = request.args.get("id")
+    legal_entities = ast.literal_eval(request.args.get("checks"))
+    user_id =request.args.get("user_id")
+    log_id = request.args.get("log_id")
+
+    for elem in legal_entities:
+        legal_entity_id = int(elem)
+
+        check = func.update_legal_entity(legal_entity_id, natural_person_id, session["session_id"])
+        
+        if check is None:
+            return ("erro")
+
+    return redirect('/person/list')
+
+@rpr.route('/natural_person/list')
+def person_list():
+        
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    person_dict = func.get_person_info(user["id"], session["session_id"])
+    
+    header_table=[ "Given Name", "Family Name", "Date of Birth", "Place of Birth"]
+    if(person_dict == "err"):
+        data={}
+    else:
+
+        data={}
+
+        for person in person_dict:
+            data_temp={
+                person["natural_person_id"]:{
+                    "Given Name":person["givenName"],
+                    "Family Name":person["familyName"],
+                    "Date of Birth":person["dateofBirth"],
+                    "Place of Birth":person["placeofBirth"]
+                }
+            }
+            data.update(data_temp)
+    
+    legal_entity_dict = func.get_legal_entity_info(user["id"], session["session_id"])
+    
+    list = []
+    if(data != {}):
+        if(legal_entity_dict != "err"):
+
+            for item in legal_entity_dict:
+                name = item["name"]
+                
+                if(item["natural_person_id"] != None):
+                    person_name = func.get_person_name(item["natural_person_id"], session["session_id"])
+                    
+                    new_item = {
+                        "id": item["legal_entity_id"],
+                        "name": name,
+                        "associated_id": item["natural_person_id"],
+                        "ass_name": person_name
+                    }
+                else:
+                    new_item = {
+                        "id": item["legal_entity_id"],
+                        "name": name,
+                        "associated_id": item["natural_person_id"],
+                        "ass_name": ""
+                    }
+                
+                list.append(new_item)
+    
+    menu= cfgserv.service_url + "menu"
+    return render_template("CertificateList.html", h1 = "Natural Person List", menu = menu, data=data, title="Natural Persons", list= list, header_table=header_table, url=cfgserv.service_url +"natural_person", temp_user_id = temp_user_id)
+
+@rpr.route('/legal_person/create_legal_person', methods=['GET','POST'])
+def create_legal_person():
+
+    attributesForm={}
+
+    form_items={
+        "Legal Name":"string",
+        "Established By Law":"multi_string",
+    }
+    descriptions = {
+        "Legal Name": " Legal name of the legal person",
+        "Established By Law": " Legal basis on which the legal person is established",
+    }
+    attributesForm.update(form_items)
+
+    return render_template("dynamic-form.html",title="Create Legal Person",title_description="Please enter your Legal Person data.", desc = descriptions, countries = cfgserv.eu_countries, lang=cfgserv.eu_languages ,attributes=attributesForm, redirect_url= cfgserv.service_url + "legal_person/add_legal_person_db")
+
+@rpr.route('/legal_person/add_legal_person_db', methods=['GET','POST'])
+def add_legal_person_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    legal_name= request.form.get("Legal Name")
+    established_by_law=request.form.get("Established By Law"),
+    lang=request.form.get("Lang")
+
+    #add bd
+
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+@rpr.route('/legal_person/update_legal_entities', methods=["GET", "POST"])
+def legal_person_update_legal_entities():
+
+    legal_person_id = request.args.get("id")
+    legal_entities = ast.literal_eval(request.args.get("checks"))
+    user_id =request.args.get("user_id")
+    log_id = request.args.get("log_id")
+
+    for elem in legal_entities:
+        legal_entity_id = int(elem)
+
+        check = func.update_legal_entity(legal_entity_id, legal_person_id, session["session_id"])
+        
+        if check is None:
+            return ("erro")
+
+    return redirect('/person/list')
+
+@rpr.route('/legal_person/list')
+def legal_person_list():
+        
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    person_dict = func.get_legal_person_info(user["id"], session["session_id"])
+    
+    header_table=[ "Legal Name", "Established By Law"]
+    if(person_dict == "err"):
+        data={}
+    else:
+
+        data={}
+
+        for person in person_dict:
+            data_temp={
+                person["legal_person_id"]:{
+                    "Legal Name":person["legalName"],
+                    "Established By Law":person["establishedByLaw"]
+                }
+            }
+            data.update(data_temp)
+    
+    legal_entity_dict = func.get_legal_entity_info(user["id"], session["session_id"])
+    
+    list = []
+    if(data != {}):
+        if(legal_entity_dict != "err"):
+
+            for item in legal_entity_dict:
+                name = item["name"]
+                
+                if(item["legal_person_id"] != None):
+                    person_name = func.get_person_name(item["legal_person_id"], session["session_id"])
+                    
+                    new_item = {
+                        "id": item["legal_entity_id"],
+                        "name": name,
+                        "associated_id": item["legal_person_id"],
+                        "ass_name": person_name
+                    }
+                else:
+                    new_item = {
+                        "id": item["legal_entity_id"],
+                        "name": name,
+                        "associated_id": item["legal_person_id"],
+                        "ass_name": ""
+                    }
+                
+                list.append(new_item)
+    
+    menu= cfgserv.service_url + "menu"
+    return render_template("CertificateList.html", h1 = "Legal Person List", menu = menu, data=data, title="Legal Persons", list= list, header_table=header_table, url=cfgserv.service_url +"legal_person", temp_user_id = temp_user_id)
+
+@rpr.route('/legal_entity/create', methods=['GET','POST'])
+def create_legal_entity():                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+
+    attributesForm={}
+
+    form_items={
+        "Type of Identifier":"select",
+        "Identifer":"string",
+        "Country": "select",
+        "Contact": "contact",
+        "Information URI":"string",
+    }
+    descriptions = {
+        "Country": "Country in which the Legal Entity is established.",
+        "Type of Identifier":"Type of the identifier specified by a URI according to RFC3986",
+        "Identifier": "Identifier wich identifies the legal entity.",
+        "Contact": "Contact details (address, e-mail and phone number) of the legal entity.",
+        "Information URI": "Information and support URI from the legal entity.",
+    }
+    attributesForm.update(form_items)
+
+    select_dict={
+        "Country":list(cfgserv.eu_countries),
+        "Type of Identifier":["http://data.europa.eu/eudi/id/EORI-No",
+                            "http://data.europa.eu/eudi/id/LEI" ,
+                            "http://data.europa.eu/eudi/id/EUID" ,
+                            "http://data.europa.eu/eudi/id/VATIN"  ,
+                            "http://data.europa.eu/eudi/id/TIN" ,
+                            "http://data.europa.eu/eudi/id/Excise"]
     }
 
+    return render_template("dynamic-form.html", title="Create Legal Entity",title_description="Please enter your Legal Entity data.", desc = descriptions, countries = cfgserv.eu_countries ,attributes=attributesForm, select_dict=select_dict, redirect_url= cfgserv.service_url + "user_auth")
 
-    attributesForm.update(form_items)
+@rpr.route('/legal_entity/add_legal_entity_db', methods=['GET','POST'])
+def add_legal_entity_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    type_of_identifier= request.form.get("Type of Identifier")
+    identifier= request.form.get("Identifier")
+    address=request.form.get("address")
+    email=request.form("email")
+    phone_number=request.form.get("phone_number")
+    information_URI=request.form.get("Information URI")
+    country=request.form.get("Country")
     
 
-    return render_template("dynamic-form.html", desc = descriptions, countries = ejbca.countries ,attributes=attributesForm,temp_user_id=temp_user_id, redirect_url= cfgserv.service_url + "relying_party_registration_request")
+    #add bd
+
+
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+@rpr.route('/legal_entity/edit', methods=["GET", "POST"])
+def legal_entity_edit():
+    
+    if not request.args.get("id"):
+        return ""
+    
+    legal_entity_id = request.args.get("id")
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    db_data = func.get_data_legal_entity_edit(legal_entity_id, session["session_id"])
+
+    return render_template("dynamic-form_edit_add.html", h3 = "Legal Entity Information", id = legal_entity_id, lang = cfgserv.eu_languages, data_edit = db_data, Langs=cfgserv.eu_languages,Countries=cfgserv.eu_countries, temp_user_id=temp_user_id, redirect_url= cfgserv.service_url + "legal_entity/edit_db")
+
+@rpr.route('/legal_entity/edit_db', methods=["GET", "POST"])
+def legal_entity_edit_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    legal_entity_id = request.form.get("id")
+
+    form = dict(request.form)
+    form.pop("proceed")
+    grouped = defaultdict(list)
+
+    for key, value in form.items():
+        grouped[key] = value
+
+    check = func.edit_legal_entity_db_info(
+        grouped, 
+        legal_entity_id, 
+        session["session_id"]
+    )
+
+    if check is None:
+        return ("erro")
+    else:
+        return redirect('/legal_entity/list')
+    
+@rpr.route('/legal_entity/update_RPs', methods=["GET", "POST"])
+def update_RPs():
+
+    legal_entity_id = request.args.get("id")
+    RPs = ast.literal_eval(request.args.get("checks"))
+    user_id =request.args.get("user_id")
+    log_id = request.args.get("log_id")
+
+    for elem in RPs:
+        RP_id = int(elem)
+
+        check = func.update_RP(RP_id, legal_entity_id, session["session_id"])
+        
+        if check is None:
+            return ("erro")
+
+    return redirect('/legal_entity/list')
+
+@rpr.route('/legal_entity/list')
+def legal_entity_list():
+        
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    legal_entity_dict = func.get_legal_entity_info(user["id"], session["session_id"])
+    
+    header_table=[ "Identifier","Postal Address","Country","E-mail","Phone","Information URI"]
+    if(legal_entity_dict == "err"):
+        data={}
+    else:
+
+        data={}
+
+        for legal_entity in legal_entity_dict:
+            data_temp={
+                legal_entity["legal_entity_id"]:{
+                    "Identifier":legal_entity["identifier"],
+                    "Postal Address":legal_entity["postalAddress"],
+                    "Country":legal_entity["country"],
+                    "E-mail":legal_entity["email"],
+                    "Phone":legal_entity["phone"],
+                    "Information URI":legal_entity["infoURI"]
+                }
+            }
+            data.update(data_temp)
+    
+    RP_dict = func.get_RP_info(user["id"], session["session_id"])
+    
+    list = []
+    if(data != {}):
+        if(RP_dict != "err"):
+
+            for item in RP_dict:
+                name_txt = item["TradeName"]
+
+                if(item["legal_entity_id"] != None):
+                    legal_entity_name = func.get_legal_entity_name(item["legal_entity_id"], session["session_id"])
+                    
+                    new_item = {
+                        "id": item["RP_id"],
+                        "name": name_txt,
+                        "associated_id": item["legal_entity_id"],
+                        "ass_name": legal_entity_name
+                    }
+                else:
+                    new_item = {
+                        "id": item["RP_id"],
+                        "name": name_txt,
+                        "associated_id": item["legal_entity_id"],
+                        "ass_name": ""
+                    }
+                
+                list.append(new_item)
+    
+    menu= cfgserv.service_url + "menu"
+    return render_template("CertificateList.html", h1 = "Legal Entity List", menu = menu, data=data, title="Legal Entities", list= list, header_table=header_table, url=cfgserv.service_url +"legal_entity", temp_user_id = temp_user_id)
+
+
+@rpr.route('/RP/create', methods=['GET','POST'])
+def RP_create():
+
+    attributesForm={}
+
+    form_items={
+        "Trade Name": "string",
+        "Support URI": "string",
+        "Services Description": "multi_string",
+        "Entitlement": "select",
+        "Registry URI":"string",
+        "Type of Policy": "select",
+        "Policy URI":"string",
+        "x5c":"string"
+    }
+    descriptions = {
+        "Trade Name": "Trade name (common name, service name) of the Wallet-Relying Party.",
+        "Support URI": "Information and support URI from the legal entity.",
+        "Services Description": "Descriptions of the services provided by the Wallet-Relying Party.",
+        "Entitlement": "Set of entitlements of the Wallet-Relying Party. ",
+        "Registry URI":"URI for the national registry API of the registered Wallet-Relying Party",
+        "Type of Policy":"Type of the policy.",
+        "Policy URI": "URI where the policy is published.",
+        "x5c":"X.509 certificate chains" 
+    }
+
+    attributesForm.update(form_items)
+
+    select_dict={
+        "Entitlement":["http://data.europa.eu/eudi/entitlement/Service_Provider",
+                    "http://data.europa.eu/eudi/entitlement/QEAA_Provider",
+                    "http://data.europa.eu/eudi/entitlement/Non_Q_EAA_Provider",
+                    "http://data.europa.eu/eudi/entitlement/PUB_EAA_Provider",
+                    "http://data.europa.eu/eudi/entitlement/PID_Provider",
+                    "http://data.europa.eu/eudi/entitlement/QCert_for_ESeal_Provider",
+                    "http://data.europa.eu/eudi/entitlement/QCert_for_ESig_Provider",
+                    "http://data.europa.eu/eudi/entitlement/rQSealCDs_Provider",
+                    "http://data.europa.eu/eudi/entitlement/rQSigCDs_Provider",
+                    "http://data.europa.eu/eudi/entitlement/ESig_ESeal_Creation_Provider"],
+
+        "Type of Policy":["http://data.europa.eu/eudi/policy/trust-service-practice-statement ",
+                        "http://data.europa.eu/eudi/policy/terms-and-conditions",
+                        "http://data.europa.eu/eudi/policy/privacy-statement",
+                        "http://data.europa.eu/eudi/policy/privacy-policy",
+                        "http://data.europa.eu/eudi/policy/registration-policy"]
+
+    }
+    
+    return render_template("dynamic-form.html",title="Create Relying Party",title_description="Please enter your Relying Party data.", desc = descriptions, countries = cfgserv.eu_countries, lang=cfgserv.eu_languages, attributes=attributesForm, select_dict=select_dict, redirect_url= cfgserv.service_url + "relying_party_registration_request")
+
+@rpr.route('/RP/add_RP_db', methods=['GET','POST'])
+def add_RP_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    trade_name= request.form.get("Trade Name")
+    support_URI= request.form.get("Support URI"),
+    srvDescription_lang=request.form.get("Lang")
+    srvDescription=request.form.get("Services Description"),
+    entitlement= request.form.get("Entitlement"),
+    registry_uri=request.form.get("Registry URI"),
+    type_of_policy=request.form.get("Type of Policy"),
+    policy_uri=request.form.get("Policy URI"),
+    x5c=request.form.get("x5c")
+    
+
+    #add bd
+
+
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+@rpr.route('/RP/edit', methods=["GET", "POST"])
+def RP_edit():
+    
+    if not request.args.get("id"):
+        return ""
+    
+    RP_id = request.args.get("id")
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    db_data = func.get_data_RP_edit(RP_id, session["session_id"])
+
+    return render_template("dynamic-form_edit_add.html", h3 = "Relying Party Information", id = RP_id, lang = cfgserv.eu_languages, data_edit = db_data, Langs=cfgserv.eu_languages,Countries=cfgserv.eu_countries, temp_user_id=temp_user_id, redirect_url= cfgserv.service_url + "RP/edit_db")
+
+@rpr.route('/RP/edit_db', methods=["GET", "POST"])
+def RP_edit_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    RP_id = request.form.get("id")
+
+    form = dict(request.form)
+    form.pop("proceed")
+    grouped = defaultdict(list)
+
+    for key, value in form.items():
+        grouped[key] = value
+
+    check = func.edit_RP_db_info(
+        grouped, 
+        RP_id, 
+        session["session_id"]
+    )
+
+    if check is None:
+        return ("erro")
+    else:
+        return redirect('/RP/list')
+    
+@rpr.route('/RP/update_intended_uses', methods=["GET", "POST"])
+def update_intended_uses():
+
+    RP_id = request.args.get("id")
+    intended_uses = ast.literal_eval(request.args.get("checks"))
+    user_id =request.args.get("user_id")
+    log_id = request.args.get("log_id")
+
+    for elem in intended_uses:
+        intended_use_id = int(elem)
+
+        check = func.update_intended_use(intended_use_id, RP_id, session["session_id"])
+        
+        if check is None:
+            return ("erro")
+
+    return redirect('/RP/list')
+
+@rpr.route("/RP/certificate", methods=["GET", "POST"])
+def relying_party_access_certificate():
+
+    modulus=crypto.key_size
+    exponent=crypto.exponent
+    priv_key = ec.generate_private_key(ec.SECP256R1(), default_backend() )
+
+    RP_id = request.args.get("id")
+
+    #dados da RP
+    RP=get_RP_data()
+    #commonName
+    tradeName=RP["trade_name"]
+    #uniformResourceIdentifier
+    supportURI=RP["supportURI"]
+
+    #se user for legal person
+    #dados da legal person
+    user=get_user()
+    #organizationName
+    legalName=user["legalName"]
+
+    #se user for natural person
+    user=get_user()
+    givenName=user["givenName"]
+    #surname
+    surname=user["familyName"]
+
+    #dados da legalEntity
+    legal_entity=get_legal_entity()
+    #caso for natural person é serialNumber no caso de uma legal person organizationIdentifier
+    identifier=legal_entity["identifier"]
+    country= legal_entity["country"]
+    email= legal_entity["email"]
+    phone= legal_entity["phone"]
+
+
+    #como as TSLs, ex: lang en, description=test  
+    servicesDescription=request.form.get("Services Description")#como as TSLs, ex: lang en, description=test  
+    entitlement=request.form.get("Entitlement")
+    # verificar legal entity se é pertence ao sector público, se sim True, se não False
+    isPSB= False
+    password=request.form.get("Password")
+
+
+    certificateRequest= generateCertificateRequest(priv_key, commonName, countryName, organizationName, registration_number, email,dns_Name)
+    
+    certificateRequestString = "-----BEGIN CERTIFICATE REQUEST-----\n"+ base64.b64encode(certificateRequest).decode("utf-8") + "\n"+ "-----END CERTIFICATE REQUEST-----"
+    certificateAuthorityName = getCertificateAuthorityName(countryName)
+    certificateRequestBody = getJsonBody(certificateRequestString, certificateAuthorityName, countryName)
+    postUrl = "https://" + ejbca.cahost + "/ejbca/ejbca-rest-api/v1" + ejbca.endpoint
+
+    headers ={
+        "Content-Type": "application/json",
+        'Authorization': 'Bearer test',
+    }
+
+    clientP12ArchiveFilepath = ejbca.clientP12ArchiveFilepath
+    clientP12ArchivePassword = ejbca.clientP12ArchivePassword
+    ManagementCA = ejbca.managementCA
+
+    trustCA= getTrustManagerOfCACertificate(ManagementCA)
+
+    response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
+
+    response = response.json()
+    
+    certificate_bytes=base64.b64decode(response["certificate"])
+
+    certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
+
+    serial_number=response["serial_number"]
+
+    user_relying_party_db(user,request.form, serial_number, certificate,response["certificate"], session["session_id"])
+
+    p12=pkcs12.serialize_key_and_certificates(
+        name=commonName.encode("utf-8"),key=priv_key,cert=certificate, cas=list().append(trustCA),
+        encryption_algorithm=serialization.BestAvailableEncryption(password.encode("utf-8"))
+    )
+
+    tag = uuid.uuid4()
+
+    file_name = commonName + "_" + str(tag)
+
+    p12_temp.update({file_name:{"response": p12, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry)}})
+
+    cert = certificate.subject.rfc4514_string().split(",")
+    dic = {parte.split("=")[0]: parte for parte in cert}
+    order = [dic.get("C"), dic.get("O"), dic.get("CN")]
+    aux = [v for k, v in dic.items() if k not in ["C", "O", "CN"]]
+
+    cert_subject_rfc4514_string = ",".join(order + aux)
+
+    certificate_presentation={
+        "certificate_issuer":certificate.issuer.rfc4514_string(),
+        "certificate_distinguished_name":cert_subject_rfc4514_string,
+        "validity_from":certificate.not_valid_before_utc,
+        "validity_to":certificate.not_valid_after_utc,
+    }
+
+    return render_template('downloadPage.html', attributes=certificate_presentation, download_url= "/Download/"+ file_name)
+
+@rpr.route('/RP/list', methods=['GET','POST'])
+def RP_list():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    RP_dict = func.get_RP_info(user["id"], session["session_id"])
+    
+    header_table=[ "Trade Name","Support URIs","Description","Entitlement","Provides Attestations","Supervisory Authority","Registry URI"]
+    if(RP_dict == "err"):
+        data={}
+    else:
+
+        data={}
+
+        for RP in RP_dict:
+            data_temp={
+                RP["RP_id"]:{
+                    "Trade Name":RP["Version"],
+                    "Support URIs":RP["SequenceNumber"],
+                    "Description":RP["RPType"],
+                    "Entitlement":RP["SchemeName_lang"],
+                    "Provides Attestations":RP["schemeTerritory"],
+                    "Supervisory Authority":RP["issue_date"],
+                    "Registry URI":RP["next_update"]
+                }
+            }
+            data.update(data_temp)
+    
+    intended_use_dict = func.get_intended_use(user["id"], session["session_id"])
+    
+    list = []
+    if(data != {}):
+        if(intended_use_dict != "err"):
+
+            for item in intended_use_dict:
+                name_txt = item["identifier"]
+                
+                if(item["RP_id"] != None):
+                    RP_name = func.get_RP_name(item["RP_id"], session["session_id"])
+                    
+                    new_item = {
+                        "id": item["intended_use_id"],
+                        "name": name_txt,
+                        "associated_id": item["RP_id"],
+                        "ass_name": RP_name
+                    }
+                else:
+                    new_item = {
+                        "id": item["intended_use_id"],
+                        "name": name_txt,
+                        "associated_id": item["RP_id"],
+                        "ass_name": ""
+                    }
+                
+                list.append(new_item)
+    
+
+    menu= cfgserv.service_url + "menu"
+    return render_template("CertificateList.html", h1 = "Relying Party List", menu = menu, data=data, title="Relying Parties", list= list, header_table=header_table, url=cfgserv.service_url +"RP", temp_user_id = temp_user_id)
+
+@rpr.route('/intended_use/create', methods=['GET','POST'])
+def intended_use_create():
+
+    attributesForm={}
+
+    form_items={
+        "Purpose": "multi_string",
+        "Type of Privacy Policy ": "select",
+        "Privacy Policy URI": "string",
+        "Credential":"select",
+    }
+    descriptions = {
+        "Purpose": "Purpose of the intended data processing",
+        "Type of Policy":"Type of the policy.",
+        "Privacy Policy URI": "URI where the policy is published.",
+        "Credential":"Requestable attestatio which may be requested by the Wallet-Relying Party within the scope of the present intended use of data." 
+    }
+
+    attributesForm.update(form_items)
+
+    select_dict={
+        "Type of Privacy Policy ":["http://data.europa.eu/eudi/policy/trust-service-practice-statement ",
+                        "http://data.europa.eu/eudi/policy/terms-and-conditions",
+                        "http://data.europa.eu/eudi/policy/privacy-statement",
+                        "http://data.europa.eu/eudi/policy/privacy-policy",
+                        "http://data.europa.eu/eudi/policy/registration-policy"]
+
+    }
+    
+    return render_template("dynamic-form.html",title="Create Intended Use",title_description="Please enter your Intended Use data.", desc = descriptions, countries = cfgserv.eu_countries ,attributes=attributesForm, select_dict=select_dict, redirect_url= cfgserv.service_url + "/intended_use/add_intended_use_db")
+
+@rpr.route('/intended_use/add_intended_use_db', methods=['GET','POST'])
+def add_intended_use_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    purpose=request.form.get("Purpose")
+    purpose_lang=request.form.get("Lang")
+    type_of_policy=request.form.get("Type of Policy")
+    policy_uri=request.form.get("Policy URI")
+    credentials=request.form.get("Credential")
+    
+
+    #add bd
+
+
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+@rpr.route('/intended_use/edit', methods=["GET", "POST"])
+def intended_use_edit():
+    
+    if not request.args.get("id"):
+        return ""
+    
+    intended_use_id = request.args.get("id")
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    db_data = func.get_data_intended_use_edit(intended_use_id, session["session_id"])
+
+    return render_template("dynamic-form_edit_add.html", h3 = "Intended Use Information", id = intended_use_id, lang = cfgserv.eu_languages, data_edit = db_data, Langs=cfgserv.eu_languages,Countries=cfgserv.eu_countries, temp_user_id=temp_user_id, redirect_url= cfgserv.service_url + "intended_use/edit_db")
+
+@rpr.route('/intended_use/edit_db', methods=["GET", "POST"])
+def intended_use_edit_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    intended_use_id = request.form.get("id")
+
+    form = dict(request.form)
+    form.pop("proceed")
+    grouped = defaultdict(list)
+
+    for key, value in form.items():
+        grouped[key] = value
+
+    check = func.edit_intended_use_db_info(
+        grouped, 
+        intended_use_id, 
+        session["session_id"]
+    )
+
+    if check is None:
+        return ("erro")
+    else:
+        return redirect('/intended_use/list')
+    
+@rpr.route("/intended_use/certificate", methods=["GET", "POST"])
+def intended_use_registration_certificate():
+
+    # RP_data=get_RP_db_data()
+    # intended_use_data= get_intended_use_data()
+    # legal_entity_data= get_legal_entity_data()
+    # credentials_data=get_credential_data()
+
+    # #if legal person
+    # legal_person_data=get_legal_person_data()
+
+    # #if natural person
+    # natural_person_data= get_natural_person_data()
+
+    iat= int(time.time())
+
+    # name=RP_data["tradeName"]
+    # purpose=intended_use_data["purpose"]
+    # info_uri=legal_entity_data["info_uri"]
+    # country=legal_entity_data["country"]
+    
+    # #if legal_person
+    # legal_name=legal_person_data["legal_name"]
+
+    # #if natural_person
+    # given_name=natural_person_data["given_name"]
+    # family_name=natural_person_data["family_name"]
+
+    # id=legal_entity_data["identifier"]
+    # privacy_policy=intended_use_data["privacyPolicy"]
+
+    # # definir de acordo com os dados do certificado
+    # # policy_id=certificate_policy_id
+    # # certificate_policy=certificate_URI
+
+    # entitlement=RP_data["entitlement"]
+    # providesAttestations=RP_data["providesAttestations"]
+    # public_body=RP_data["isPSB"]
+    # service=RP_data["srvDescription"]
+    # #A URI to a status list presenting information about validity of the WRPRC. 
+    # #status=
+
+    # #se utiliza intermediário
+    # #act
+
+    json_header = { "typ": "rc-wrp+jwt",
+                    "alg": "ES256", 
+                    "b64": "true", 
+                    "cty": ["b64"], "x5c": [],}
+    
+    json_payload = { "name": "Example GmbH",
+                     "purpose": [ { "lang": "en-US", "value": "Required for checking the minimum age" }, { "lang": "de-DE", "value": "Benötigt für die Überprüfung des Mindestalters" } ], 
+                     "info_uri": "https://example.com",
+                    "country": "DE",
+                    "sub": { "legal_name": "Example GmbH",
+                                "id": "LEIXG-529900T8BM49AURSDO55" },
+                    "privacy_policy": "https://example-company.com/en/privacy-policy", 
+                    "policy_id": [ "0.4.0.19475.3.1" ], 
+                    "certificate_policy": "https://registrat.example.com/certificate-policy", 
+                    "iat": iat, 
+                    "credentials": [
+                        { "format": "dc+sd-jwt", "meta": { "vct_values": [ "https://credentials.example.com/identity_credential" ] }, "claims": [ { "path": ["given_name"] }, { "path": ["family_name"] }, { "path": ["address", "street_address"] } ] },
+                        { "format": "dc+sd-jwt", "meta": { "vct_values": [ "https://othercredentials.example/mdl" ] }, "claims": [ { "path": ["given_name"] }, { "path": ["family_name"] }, { "path": ["address", "street_address"] } ] } ],
+                    "entitlements": [ "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider" ],
+                    "provided_attestations": [ { "format": "dc+sd-jwt", "meta": { "vct_values": [ "" ] } } ],
+                    "public_body": False,
+                    "service": [[ { "lang": "en-US", "value": "Bundesagentur für Sprunginnovationen" }, { "lang": "de-DE", "value": "Federal Agency for Breakthrough Innovations" } ]],
+                    "status": { "status_list": { "idx": 0, "uri": "https://example.com/statuslists/1" } }, 
+                    "act": { "sub":{ "id":"DE:EX-987654381" } }
+                    }
+    
+    with open("app/EJBCA/ecdsa_cert.pem", "rb") as f:
+       cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+
+    base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+    
+    #Jades with b-b profile
+
+    # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
+
+    with open("naoAssinado.json", "w", encoding="utf-8") as f:
+        json.dump(
+            json_payload,
+            f,
+    )
+
+    with open("naoAssinado.json", "rb") as f:
+        file_bytes = f.read()
+    
+    # digest = hashes.Hash(hashes.SHA256())
+    # digest.update(file_bytes)
+    # hash_value = digest.finalize()
+
+    base64_payload=base64.b64encode(file_bytes).decode("utf-8")
+
+    #print(document)
+    payload=json.dumps({
+
+            "documents":[{
+
+                "document": base64_payload,
+                "signature_format": "J",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+
+            } ],
+        "endEntityCertificate": base64_cert,
+        "certificateChain": [
+        ],
+        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
+
+    })
+
+    headers={
+        'Content-Type': 'application/json'
+    }
+
+    calculate_hash=requests.post(url=cfgserv.sca_signer_url+"/signatures/calculate_hash",headers=headers, data=payload)
+
+    #print(calculate_hash.json())
+    #print(calculate_hash.json()["hashes"])
+
+    hashes1 = calculate_hash.json()["hashes"]
+
+    #print(hashes1[0])
+
+    base64_string = urllib.parse.unquote(hashes1[0])
+
+    data_to_be_signed = base64.b64decode(base64_string)
+
+    print(data_to_be_signed)
+
+    #print(data_to_be_signed)
+    # hash = base64.urlsafe_b64decode(hashes[0]).
+    # base64.b64decode
+
+    signature_date = calculate_hash.json()["signature_date"]
+
+    with open("app/EJBCA/ecdsa_key.pem", "rb") as f:
+        private_key = serialization.load_pem_private_key(
+        f.read(),
+        password=None,
+        backend=default_backend()
+    )
+
+    # key=ECC.import_key(private_key)
+
+    # signature = DSS.new(key).sign(data_to_be_signed)
+    signature = private_key.sign(
+        data_to_be_signed,
+        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
+    )
+
+    base64_signature= base64.b64encode(signature).decode()
+    #print(base64_signature)
+
+    payload = json.dumps({
+        "documents": [
+            {
+                "document": base64_payload,
+                "signature_format": "J",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            }
+        ],
+        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+        "returnValidationInfo": False,
+        "endEntityCertificate": base64_cert,
+        "certificateChain": [
+        ],
+        "signatures":[base64_signature],
+        "date": signature_date
+    }).encode()
+
+    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
+    
+    document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
+
+    # data=json.loads(base64.b64decode(document_with_signature).decode("utf-8"))
+
+    # jwt_payload=data["payload"]
+    # jwt_header=data["signatures"][0]["protected"]
+    # jwt_signature=data["signatures"][0]["signature"]
+
+    # jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
+
+    output_file ="teste.json"
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(
+            json.loads(base64.b64decode(document_with_signature).decode()),
+            f,
+        )
+        
+    #cbor
+
+    cbor_data= cbor2.dumps(json_payload)
+
+    msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
+
+    with open("app/EJBCA/private_key.pem", "rb") as f:
+        pem_bytes = f.read()
+
+    cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
+    msg.key = cose_key
+    cose_bytes = msg.encode()
+
+    return cose_bytes.hex()
+
+@rpr.route('/intended_use/list', methods=['GET','POST'])
+def intended_use_list():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    intended_use_dict = func.get_intended_use_info(user["id"], session["session_id"])
+    
+    header_table=[ "Identifer","Purpose","Created At","Revoked At","Credentials"]
+    if(intended_use_dict == "err"):
+        data={}
+    else:
+
+        data={}
+
+        for intended_use in intended_use_dict:
+            data_temp={
+                intended_use["intended_use_id"]:{
+                    "Identifer":intended_use["identifier"],
+                    "Purpose":intended_use["purpose"],
+                    "Created At":intended_use["createdAt"],
+                    "Revoked At":intended_use["revokedAt"],
+                    "Credentials":intended_use["credential"]
+                }
+            }
+            data.update(data_temp)
+    
+   
+    menu= cfgserv.service_url + "menu"
+    return render_template("CertificateList.html", h1 = "Intended Use List", menu = menu, data=data, title="Intended Uses", list= list, header_table=header_table, url=cfgserv.service_url +"intended_use", temp_user_id = temp_user_id)
+
+@rpr.route('/credential/create', methods=['GET','POST'])
+def credential_create():
+
+    attributesForm={}
+
+    form_items={
+        "Format": "string",
+        "Meta": "string",
+        "Claim": "multi_string",
+    }
+    descriptions = {
+        "Format": "Format of the attestation.",
+        "Meta":"An object defining additional properties requested by the Verifier (including the credential type) that apply to the metadata and validity data of the Credential",
+        "Claim": "Attributes in the requested attestation.(Optional)"}
+
+    attributesForm.update(form_items)
+
+    select_dict={}
+    
+    return render_template("dynamic-form.html",title="Create Intended Use",title_description="Please enter your Intended Use data.", desc = descriptions, countries = cfgserv.eu_countries ,attributes=attributesForm, select_dict=select_dict, redirect_url= cfgserv.service_url + "/credential/add_credential_db")
+
+@rpr.route('/credential/add_credential_db', methods=['GET','POST'])
+def add_credential_db():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+
+    format=request.form.get("Purpose")
+    meta=request.form.get("Lang")
+
+
+    dict_form=dict(request.form)
+    grouped = defaultdict(list)
+    
+
+    for key, value in dict_form.items():
+        match=re.match(r"(path)_(.*?).(\d+)",key)
+        if match:
+            attr, prefix, index = match.groups()
+            index = int(index)
+            while len(grouped[prefix]) <= index:
+                grouped[prefix].append({})
+            grouped[prefix][index][attr] = value
+            
+
+    #add bd
+
+
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+
+
+@rpr.route('/credential/list', methods=['GET','POST'])
+def credential_list():
+
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    credential_dict = func.get_credential_info()
+    
+    header_table=[ "Format","Meta", "Claims"]
+    if(credential_dict == "err"):
+        data={}
+    else:
+
+        data={}
+
+        for credential in credential_dict:
+            data_temp={
+                credential["credential_id"]:{
+                    "Format":credential["format"],
+                    "Meta":credential["meta"],
+                    "Claims":credential["claim"],
+                }
+            }
+            data.update(data_temp)
+    
+   
+    menu= cfgserv.service_url + "menu"
+    return render_template("CertificateList.html", h1 = "Credential List", menu = menu, data=data, title="Credentials", list= list, header_table=header_table, url=cfgserv.service_url +"credential", temp_user_id = temp_user_id)
+
 
 @rpr.route("/relying_party_registration_request", methods=["GET", "POST"])
 def relying_party_registration():
@@ -449,12 +1441,13 @@ def relying_party_registration():
     givenName=user["given_name"]
     surname=user["family_name"]
 
-    commonName=request.form.get("Common Name")
-    countryName=request.form.get("Country")
-    organizationName=request.form.get("Organization Name")
-    registration_number=request.form.get("Registration Number")
-    email=request.form.get("email")
-    dns_Name=request.form.get("DNS Name")
+    tradeName=request.form.get("Trade Name")
+    supportURI=request.form.get("Support URI")
+    #como as TSLs, ex: lang en, description=test  
+    servicesDescription=request.form.get("Services Description")#como as TSLs, ex: lang en, description=test  
+    entitlement=request.form.get("Entitlement")
+    # verificar legal entity se é pertence ao sector público, se sim True, se não False
+    isPSB= False
     password=request.form.get("Password")
 
 
@@ -631,3 +1624,90 @@ def Logout():
     session.clear()
 
     return render_template('initial_page.html', redirect_url= cfgserv.service_url, pid_auth = cfgserv.service_url + "authentication", certificateList=cfgserv.service_url + "authentication_List")
+
+@rpr.route("/request_RP_data", methods=["GET"])
+def request_RP_data():
+
+    #ter dados em memória ou ficheiro para não fazer chamadas á BD. Atualizar de x em x tempo 
+
+    # registration_number= request.args.get("registration_number")
+    # name=request.args.get("name")
+    # privacy_policy_url=request.args.get("privacy_policy_url")
+    # entitlement=request.args.get("entitlement")
+    # intermediary_association=request.args.get("intermediary_association")
+    # acting_on_behalf_of=request.args.get("acting_on_behalf_of")
+    # limit=request.args.get("limit", default=20, type=int)
+
+    # results=RPs_BD
+    
+    # if name:
+    #     name_lower = name.lower()
+    #     results = [
+    #         u for u in results
+    #         if name_lower in u["name"].lower()
+    #     ]
+
+    # if registration_number:
+
+    #     results = [
+    #         u for u in results
+    #         if registration_number in u["registration_number"]
+    #     ]
+    
+    # if privacy_policy_url:
+
+    #     results = [
+    #         u for u in results
+    #         if registration_number in u["registration_number"]
+    #     ]
+
+    # if entitlement:
+
+    #     results = [
+    #         u for u in results
+    #         if registration_number in u["registration_number"]
+    #     ]
+
+    # if intermediary_association:
+
+    #     intermediary_association_lower = intermediary_association.lower()
+    #     results = [
+    #         u for u in results
+    #         if intermediary_association_lower in u["intermediary_association"].lower()
+    #     ]
+
+    # if acting_on_behalf_of:
+
+    #     acting_on_behalf_of_lower = acting_on_behalf_of.lower()
+    #     results = [
+    #         u for u in results
+    #         if acting_on_behalf_of_lower in u["acting_on_behalf_of"].lower()
+    #     ]
+
+    # results = results[:limit]
+
+    results={
+        "teste":"test"
+    }
+
+    final_result= json.dumps(results)
+
+    with open("app/EJBCA/ecdsa_key.pem", "rb") as f:
+        ec_key = serialization.load_pem_private_key(
+        f.read(),
+        password=None,
+        backend=default_backend()
+    )
+        
+    key = import_private_ec_key_from_file('app/EJBCA/ecdsa_key.pem')
+    ec_key = ECKey(priv_key=key)
+
+    jws = JWS(final_result, alg="ES256")
+
+    signed_jws = jws.sign_json([ec_key])
+
+    return signed_jws
+
+@rpr.route("/static/swagger.json")
+def swagger_static():
+    return send_from_directory("static", "swagger.json")
