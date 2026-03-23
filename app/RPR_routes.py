@@ -4242,23 +4242,6 @@ responses:
 # family_name=natural_person_data["family_name"]
 
 
-    if legal_entity_data[0]["legalperson_id"] is None:
-        natural_person = db.get_natural_person(legal_entity_data[0]["naturalperson_id"])
-        #se user for natural person
-        givenName=natural_person[0]["givenName"]
-        #surname
-        surname=natural_person[0]["familyName"]
-        certificate_policy = "itu-t(0) identified-organization(4) etsi(0) eudiwrp(194118) policy-identifiers(1) ncp-natural (1)"
-
-        
-    else:
-        legal_person = db.get_legal_person(legal_entity_data[0]["legalperson_id"])
-        #se user for legal person
-        #dados da legal person
-        #organizationName
-        legalName=legal_person[0]["legalName"]
-        certificate_policy = "itu-t(0) identified-organization(4) etsi(0) eudiwrp(194118) policy-identifiers(1) ncp-legal (2)"
-
     iat= int(time.time())
 
 # name=RP_data["tradeName"]
@@ -4267,6 +4250,7 @@ responses:
 # country=legal_entity_data["country"]
 
     name=RP_data[0]["tradeName"]
+    supportURI=RP_data[0]["supportURI"]
     purpose=intended_use_data[0]["purpose"]
     info_uri=legal_entity_data[0]["infoURI"]
     country=legal_entity_data[0]["country"]
@@ -4308,10 +4292,10 @@ responses:
 
     sub_id = TypeIdentifier[legal_entity_data[0]["identifierType"]] + '-' + id
 
-    json_header = { "typ": "rc-wrp+jwt",
-                "alg": "ES256", 
-                "b64": "true", 
-                "cty": ["b64"], "x5c": [],}
+    # json_header = { "typ": "rc-wrp+jwt",
+    #             "alg": "ES256", 
+    #             "b64": "true", 
+    #             "cty": ["b64"], "x5c": [],}
 
     headers={
         "accept": "application/json",
@@ -4332,68 +4316,67 @@ responses:
     status_idx=status["status_list"]["idx"]
     status_uri=status["status_list"]["uri"]
 
+    json_payload = { 
+                        "name": name,
+                        "purpose": purpose, 
+                        "info_uri": info_uri,
+                        "country": country,
+                        "sub": sub_id,
+                        "privacy_policy": privacy_policy, 
+                        "policy_id": [ "{ itu-t(0) identified-organization(4) etsi(0) eudiwrpa(19475) policy-identifiers(3) wrprc (1)}" ],
+                        "iat": iat, 
+                        "credentials": credentials_data,
+                        "entitlements": entitlement,
+                        "provides_attestations": [ { 
+                                                    "format": credentials_data[0]["format"], "meta": { "vct_values": [ credentials_data[0]["meta"] ] } 
+                        } ],
+                        "public_body": False,
+                        "service": service,
+                        "supportURI":supportURI,
+                        "status": { 
+                            "status_list": { 
+                                            "idx": status_idx, "uri": status_uri
+                            } 
+                        }
+        }
+    
+    if legal_entity_data[0]["legalperson_id"] is None:
+        natural_person = db.get_natural_person(legal_entity_data[0]["naturalperson_id"])
+        #se user for natural person
+        givenName=natural_person[0]["givenName"]
+        #surname
+        surname=natural_person[0]["familyName"]
+        certificate_policy = "itu-t(0) identified-organization(4) etsi(0) eudiwrp(194118) policy-identifiers(1) ncp-natural (1)"
+        json_payload.update({
+            "sub_gn": givenName,
+            "sub_fn":surname,
+            "certificate_policy":certificate_policy
+        })
+
+        
+    else:
+        legal_person = db.get_legal_person(legal_entity_data[0]["legalperson_id"])
+        #se user for legal person
+        #dados da legal person
+        #organizationName
+        legalName=legal_person[0]["legalName"]
+        certificate_policy = "itu-t(0) identified-organization(4) etsi(0) eudiwrp(194118) policy-identifiers(1) ncp-legal (2)"
+        json_payload.update({
+            "sub_ln": legalName,
+            "certificate_policy":certificate_policy
+        })
+
     if RP_data[0]["usesIntermediary"] != None:
         rp_intermediary = db.get_rp_certificate(RP_data[0]["usesIntermediary"])
         legalentity_intermediary = db.get_legal_entity_info_edit(rp_intermediary[0]["supervisorAuthority"])
         aux = TypeIdentifier[legalentity_intermediary[0]['identifierType']] + '-' + legalentity_intermediary[0]['identifier']
-        json_payload = { 
-                        "name": name,
-                        "purpose": purpose, 
-                        "info_uri": info_uri,
-                        "country": country,
-                        "sub": { 
-                                "legal_name": legalName,
-                                "id": sub_id
-                        },
-                        "privacy_policy": privacy_policy, 
-                        "policy_id": [ "{ itu-t(0) identified-organization(4) etsi(0) eudiwrpa(19475) policy-identifiers(3) wrprc (1)}" ], 
-                        "certificate_policy": certificate_policy, 
-                        "iat": iat, 
-                        "credentials": credentials_data,
-                        "entitlements": entitlement,
-                        "provided_attestations": [ { 
-                                                    "format": credentials_data[0]["format"], "meta": { "vct_values": [ credentials_data[0]["meta"] ] } 
-                        } ],
-                        "public_body": False,
-                        "service": service,
-                        "status": { 
-                            "status_list": { 
-                                            "idx": status_idx, "uri": status_uri
-                            } 
-                        }, 
-                        "act": { 
-                            "sub":{ 
-                                "id": aux
-                            } 
-                        }
-        }
-    else: 
-        json_payload = { 
-                        "name": name,
-                        "purpose": purpose, 
-                        "info_uri": info_uri,
-                        "country": country,
-                        "sub": { 
-                                "legal_name": legalName,
-                                "id": sub_id
-                        },
-                        "privacy_policy": privacy_policy, 
-                        "policy_id": [ "{ itu-t(0) identified-organization(4) etsi(0) eudiwrpa(19475) policy-identifiers(3) wrprc (1)}" ], 
-                        "certificate_policy": certificate_policy, 
-                        "iat": iat, 
-                        "credentials": credentials_data,
-                        "entitlements": entitlement,
-                        "provided_attestations": [ { 
-                                                    "format": credentials_data[0]["format"], "meta": { "vct_values": [ credentials_data[0]["meta"] ] } 
-                        } ],
-                        "public_body": False,
-                        "service": service,
-                        "status": { 
-                            "status_list": { 
-                                            "idx": status_idx, "uri": status_uri
-                            } 
-                        }
-        }
+
+        json_payload.update({
+            "intermediary":{
+                "sub":aux,
+                "sname":legalentity_intermediary[0]["tradeName"]
+            }
+        })
     
     with open(cfgserv.wrprc_certificate, "rb") as f:
         cert = x509.load_der_x509_certificate(f.read(), default_backend())
