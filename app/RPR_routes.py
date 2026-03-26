@@ -106,61 +106,55 @@ def authentication():
     payload ={
         "type": "vp_token",
         "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
-        "presentation_definition": {
-            "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
-            "input_descriptors": [
+        "dcql_query": {
+            "credentials": [
             {
-                "id": "eu.europa.ec.eudi.pid.1",
-                "format": {
-                "mso_mdoc": {
-                    "alg": [
-                    "ES256",
-                    "ES384",
-                    "ES512",
-                    "EdDSA"
-                    ]
-                }
+                "id": "query_0",
+                "format": "mso_mdoc",
+                "meta": {
+                "doctype_value": "eu.europa.ec.eudi.pid.1"
                 },
-                "name": "EUDI PID",
-                "purpose": "We need to verify your identity",
-                "constraints": {
-                "fields": [
-                    {
+                "claims": [
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['family_name']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "family_name"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['given_name']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "given_name"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['birth_date']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "birth_date"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['issuing_authority']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "issuing_authority"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['issuing_country']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "issuing_country"
                     ],
                     "intent_to_retain": False
-                    }
-                ]
                 }
+                ]
             }
             ]
         }
-        }
+    }
 
 
     headers = {
@@ -168,7 +162,7 @@ def authentication():
     }
 
     response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
-
+    
     QR_code_url = (
         "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
         + response["client_id"]
@@ -180,24 +174,6 @@ def authentication():
     session["session_id"]=str(uuid.uuid4())
     session["certificate_List"]=False
 
-    payload_sameDevice.update({"wallet_response_redirect_uri_template":cfgserv.service_url +
-                                                       "getpidoid4vp?response_code={RESPONSE_CODE}&session_id=" + session["session_id"]})
-
-    response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
-
-    deeplink_url = (
-        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
-        + response_same_device["client_id"]
-        + "&request_uri="
-        + response_same_device["request_uri"]
-    )
-
-    oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry), "certificate_List":False}})
-
-
-    # Generate QR code
-    # img = qrcode.make("uri")
-    # QRCode.print_ascii()
 
     qrcode = segno.make(QR_code_url)
     out = io.BytesIO()
@@ -218,7 +194,7 @@ def authentication():
 
     return render_template(
         "pid_login_qr_code.html",
-        url_data=deeplink_url,
+        url_data="deeplink_url",
         qrcode=qr_img_base64,
         presentation_id=response["transaction_id"],
         redirect_url= cfgserv.service_url
@@ -230,61 +206,55 @@ def authentication_List():
     payload ={
         "type": "vp_token",
         "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
-        "presentation_definition": {
-            "id": "32f54163-7166-48f1-93d8-ff217bdb0653",
-            "input_descriptors": [
+        "dcql_query": {
+            "credentials": [
             {
-                "id": "eu.europa.ec.eudi.pid.1",
-                "format": {
-                "mso_mdoc": {
-                    "alg": [
-                    "ES256",
-                    "ES384",
-                    "ES512",
-                    "EdDSA"
-                    ]
-                }
+                "id": "query_0",
+                "format": "mso_mdoc",
+                "meta": {
+                "doctype_value": "eu.europa.ec.eudi.pid.1"
                 },
-                "name": "EUDI PID",
-                "purpose": "We need to verify your identity",
-                "constraints": {
-                "fields": [
-                    {
+                "claims": [
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['family_name']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "family_name"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['given_name']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "given_name"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['birth_date']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "birth_date"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['issuing_authority']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "issuing_authority"
                     ],
                     "intent_to_retain": False
-                    },
-                    {
+                },
+                {
                     "path": [
-                        "$['eu.europa.ec.eudi.pid.1']['issuing_country']"
+                    "eu.europa.ec.eudi.pid.1",
+                    "issuing_country"
                     ],
                     "intent_to_retain": False
-                    }
-                ]
                 }
+                ]
             }
             ]
         }
-        }
+    }
 
 
     headers = {
@@ -292,7 +262,7 @@ def authentication_List():
     }
 
     response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
-
+    
     QR_code_url = (
         "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
         + response["client_id"]
@@ -303,25 +273,6 @@ def authentication_List():
     payload_sameDevice=payload
     session["session_id"]=str(uuid.uuid4())
     session["certificate_List"]=True
-
-    payload_sameDevice.update({"wallet_response_redirect_uri_template":cfgserv.service_url +
-                                                       "getpidoid4vp?response_code={RESPONSE_CODE}&session_id=" + session["session_id"]})
-
-    response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
-
-    deeplink_url = (
-        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
-        + response_same_device["client_id"]
-        + "&request_uri="
-        + response_same_device["request_uri"]
-    )
-
-    oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry), "certificate_List":True}})
-
-
-    # Generate QR code
-    # img = qrcode.make("uri")
-    # QRCode.print_ascii()
 
     qrcode = segno.make(QR_code_url)
     out = io.BytesIO()
@@ -342,7 +293,7 @@ def authentication_List():
 
     return render_template(
         "pid_login_qr_code.html",
-        url_data=deeplink_url,
+        url_data="deeplink_url",
         qrcode=qr_img_base64,
         presentation_id=response["transaction_id"],
         redirect_url= cfgserv.service_url
@@ -404,13 +355,14 @@ def getpidoid4vp():
     if error == True:
         return error_msg
     
-    mdoc_json = cbor2elems(response.json()["vp_token"][0] + "==")
+    mdoc_json = cbor2elems(response.json()["vp_token"]["query_0"][0] + "==")
 
     attributesForm={}
 
     for doctype in mdoc_json:
         for attribute, value in mdoc_json[doctype]:
             attributesForm.update({attribute:value})
+
 
     temp_user_id=str(uuid.uuid4())
     session[temp_user_id]= attributesForm
