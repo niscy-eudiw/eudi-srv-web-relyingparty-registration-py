@@ -101,18 +101,13 @@ def initial_page():
 
 @rpr.route("/authentication", methods=["GET","POST"])
 def authentication():
-
-    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
-    payload ={
-        "type": "vp_token",
-        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
-        "dcql_query": {
+    cred = {
             "credentials": [
             {
                 "id": "query_0",
                 "format": "mso_mdoc",
                 "meta": {
-                "doctype_value": "eu.europa.ec.eudi.pid.1"
+                    "doctype_value": "eu.europa.ec.eudi.pid.1"
                 },
                 "claims": [
                 {
@@ -154,8 +149,16 @@ def authentication():
             }
             ]
         }
+    
+    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
+    payload ={
+        "type": "vp_token",
+        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
+        "request_uri_method": "get",
+        "dcql_query": cred,
+        "profile": "haip",
+        "authorization_request_uri": "haip-vp://"
     }
-
 
     headers = {
         "Content-Type": "application/json",
@@ -170,14 +173,19 @@ def authentication():
         + response["request_uri"]
     )
 
-    payload_sameDevice=payload
     session["session_id"]=str(uuid.uuid4())
     session["certificate_List"]=False
 
-    payload_sameDevice.update({"InvalidWalletResponseTemplate":cfgserv.service_url +
-                                                       "getpidoid4vp?response_code={RESPONSE_CODE}&session_id=" + session["session_id"]})
+    payload_sameDevice ={
+        "type": "vp_token",
+        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
+        "request_uri_method": "get",
+        "dcql_query": cred,
+        "profile": "haip",
+        "wallet_response_redirect_uri_template": f"{cfgserv.service_url}getpidoid4vp?response_code={{RESPONSE_CODE}}"
+    }
 
-    response_same_device= requests.request("POST", url, headers=headers, data=json.dumps(payload_sameDevice)).json()
+    response_same_device= requests.request("POST", url, headers=headers, json=payload_sameDevice).json()
 
     deeplink_url = (
         "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
@@ -220,18 +228,13 @@ def authentication():
 
 @rpr.route("/authentication_List", methods=["GET","POST"])
 def authentication_List():
-
-    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
-    payload ={
-        "type": "vp_token",
-        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
-        "dcql_query": {
+    cred = {
             "credentials": [
             {
                 "id": "query_0",
                 "format": "mso_mdoc",
                 "meta": {
-                "doctype_value": "eu.europa.ec.eudi.pid.1"
+                    "doctype_value": "eu.europa.ec.eudi.pid.1"
                 },
                 "claims": [
                 {
@@ -273,8 +276,14 @@ def authentication_List():
             }
             ]
         }
-    }
+    
 
+    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
+    payload ={
+        "type": "vp_token",
+        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
+        "dcql_query": cred
+    }
 
     headers = {
         "Content-Type": "application/json",
@@ -289,9 +298,29 @@ def authentication_List():
         + response["request_uri"]
     )
 
-    payload_sameDevice=payload
     session["session_id"]=str(uuid.uuid4())
     session["certificate_List"]=True
+
+    payload_sameDevice ={
+        "type": "vp_token",
+        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
+        "request_uri_method": "get",
+        "dcql_query": cred,
+        "profile": "haip",
+        "wallet_response_redirect_uri_template": f"https://registry.serviceproviders.eudiw.dev/getpidoid4vp?response_code={{RESPONSE_CODE}}&session_id=" + session["session_id"]
+    }
+
+    response_same_device= requests.request("POST", url, headers=headers, json=payload_sameDevice).json()
+    
+    deeplink_url = (
+        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
+        + response_same_device["client_id"]
+        + "&request_uri="
+        + response_same_device["request_uri"]
+    )
+
+    oid4vp_requests.update({session["session_id"]:{"response": response_same_device, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry), "certificate_List":False}})
+
 
     qrcode = segno.make(QR_code_url)
     out = io.BytesIO()
@@ -312,7 +341,7 @@ def authentication_List():
 
     return render_template(
         "pid_login_qr_code.html",
-        url_data="deeplink_url",
+        url_data=deeplink_url,
         qrcode=qr_img_base64,
         presentation_id=response["transaction_id"],
         redirect_url= cfgserv.service_url
@@ -341,7 +370,6 @@ def pid_authorization_get():
 def getpidoid4vp():
 
     if "response_code" in request.args and "session_id" in request.args:
-
         response_code = request.args.get("response_code")
         presentation_id = oid4vp_requests[request.args.get("session_id")]["response"]["transaction_id"]
         session["session_id"]=request.args.get("session_id")
