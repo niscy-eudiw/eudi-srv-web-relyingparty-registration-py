@@ -5038,7 +5038,7 @@ responses:
         if legal_entity_data[0]["legalperson_id"] is None:
             natural_person = db.get_natural_person(legal_entity_data[0]["naturalperson_id"], session_id)
             #se user for natural person
-            givenName=natural_person[0]["givenName"]
+            legalName=natural_person[0]["givenName"]
             #surname
             surname=natural_person[0]["familyName"]
             certificate_policy = "itu-t(0) identified-organization(4) etsi(0) eudiwrp(194118) policy-identifiers(1) ncp-natural (1)"
