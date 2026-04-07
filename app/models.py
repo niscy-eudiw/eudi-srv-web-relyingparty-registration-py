@@ -19,6 +19,8 @@
 This models.py file contains functions related to queries to add data to DB (user, Relying Party, access_certificate).
 
 """
+import json
+
 import pymysql
 from app_config.config import ConfService
 from db import get_db_connection as conn
@@ -1362,7 +1364,15 @@ def get_all_rp_inf():
             
             if result: 
                 rp_data = [
-                    {"tradeName": row[0], "srvDescription": row[1], "entitlement": row[2], "providesAttestations": row[3], "isIntermediary": row[4], "usesIntermediary": row[5], "policyURI": row[6]} 
+                    {
+                        "tradeName": row[0],
+                        "srvDescription": json.loads(row[2]) if row[2] else None,
+                        "entitlement": row[3],
+                        "providesAttestations": row[4],
+                        "isIntermediary": row[5],
+                        "usesIntermediary": row[6],
+                        "policyURI": row[7]
+                    }
                     for row in result
                 ]
                 extra = {'code'} 
