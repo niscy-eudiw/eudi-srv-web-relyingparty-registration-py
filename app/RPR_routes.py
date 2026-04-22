@@ -4245,7 +4245,7 @@ responses:
     if legal_entity_data[0]["legalperson_id"] is None:
         natural_person = db.get_natural_person(legal_entity_data[0]["naturalperson_id"])
         #se user for natural person
-        givenName=natural_person[0]["givenName"]
+        legalName=natural_person[0]["givenName"]
         #surname
         surname=natural_person[0]["familyName"]
         certificate_policy = "itu-t(0) identified-organization(4) etsi(0) eudiwrp(194118) policy-identifiers(1) ncp-natural (1)"
@@ -6047,30 +6047,30 @@ def request_RP_data():
 
     #ter dados em memória ou ficheiro para não fazer chamadas á BD. Atualizar de x em x tempo 
 
-    # registration_number= request.args.get("registration_number")
-    # name=request.args.get("name")
-    # privacy_policy_url=request.args.get("privacy_policy_url")
-    # entitlement=request.args.get("entitlement")
-    # intermediary_association=request.args.get("intermediary_association")
-    # acting_on_behalf_of=request.args.get("acting_on_behalf_of")
-    # limit=request.args.get("limit", default=20, type=int)
+    registration_number= request.args.get("registration_number")
+    name=request.args.get("name")
+    privacy_policy_url=request.args.get("privacy_policy_url")
+    entitlement=request.args.get("entitlement")
+    intermediary_association=request.args.get("intermediary_association")
+    acting_on_behalf_of=request.args.get("acting_on_behalf_of")
+    limit=request.args.get("limit", default=20, type=int)
 
-    data = request.get_json(silent=True)
+    # data = request.get_json(silent=True)
 
-    if not data:
-        return {
-                "status": "error",
-                "code": 400,
-                "message": "Invalid or missing JSON body"
-            }, 400
+    # if not data:
+    #     return {
+    #             "status": "error",
+    #             "code": 400,
+    #             "message": "Invalid or missing JSON body"
+    #         }, 400
 
-    registration_number = data.get("registration_number")
-    name = data.get("name")
-    privacy_policy_url = data.get("privacy_policy_url")
-    entitlement = data.get("entitlement")
-    intermediary_association = data.get("intermediary_association")
-    acting_on_behalf_of = data.get("acting_on_behalf_of")
-    limit = data.get("limit")
+    # registration_number = data.get("registration_number")
+    # name = data.get("name")
+    # privacy_policy_url = data.get("privacy_policy_url")
+    # entitlement = data.get("entitlement")
+    # intermediary_association = data.get("intermediary_association")
+    # acting_on_behalf_of = data.get("acting_on_behalf_of")
+    # limit = data.get("limit")
 
     # required_fields = {
     #     "registration_number": registration_number,
@@ -6115,14 +6115,14 @@ def request_RP_data():
 
         results = [
             u for u in results
-            if registration_number in u["policyURI"]
+            if privacy_policy_url in u["policyURI"]
         ]
 
     if entitlement:
 
         results = [
             u for u in results
-            if registration_number in u["entitlement"]
+            if entitlement in u["entitlement"]
         ]
 
     if intermediary_association:
