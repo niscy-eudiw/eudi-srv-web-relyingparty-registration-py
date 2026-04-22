@@ -34,11 +34,11 @@ class ConfService:
 
     secret_key = os.urandom(32).hex()
 
-    service_url = "http://127.0.0.1:5000/"
-    #service_url = os.getenv("SERVICE_URL","https://registry.serviceproviders.eudiw.dev/")
+    #service_url = "http://127.0.0.1:5000/"
+    service_url = os.getenv("SERVICE_URL","https://registry.serviceproviders.eudiw.dev/")
 
-    trusted_CAs_path = "app\certs"
-    #trusted_CAs_path = os.getenv("TRUSTED_CAS_PATH","/etc/eudiw/pid-issuer/cert/")
+    #trusted_CAs_path = "app\certs"
+    trusted_CAs_path = os.getenv("TRUSTED_CAS_PATH","/etc/eudiw/pid-issuer/cert/")
 
     deffered_expiry = 100
 
