@@ -416,7 +416,7 @@ responses:
     new_user = get_hash_user_pid.User(surname, givenName, birth_date, issuing_country, issuance_authority)
     hash_pid = new_user.hash
 
-    check_user = db.check_user(hash_pid)
+    check_user = db.check_user(hash_pid, "123123")
     
     if(check_user == None):
         db.insert_user(hash_pid, "123123")
