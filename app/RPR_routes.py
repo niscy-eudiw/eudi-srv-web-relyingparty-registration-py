@@ -419,7 +419,7 @@ responses:
     check_user = db.check_user(hash_pid)
     
     if(check_user == None):
-        db.insert_user(hash_pid)
+        db.insert_user(hash_pid, "123123")
         return (hash_pid)
     else:
         return (hash_pid)
