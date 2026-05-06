@@ -103,7 +103,7 @@ $('#check').change(function() {
 var presentation_id= '{{presentation_id}}'
 function Ajax_request() {
     $.ajax({
-        url: '{{redirect_url}}pid_authorization',
+        url: '{{redirect_url}}pid_authorization?type=scytales',
         method: 'GET',
         data:{"presentation_id": presentation_id },
         success: function(response) {

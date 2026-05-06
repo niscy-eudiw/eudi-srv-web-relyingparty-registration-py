@@ -194,7 +194,7 @@ responses:
         "Content-Type": "application/json",
     }
 
-    if request.args.get("type") and request.args.get("Type") == "scytales":
+    if request.args.get("type") and request.args.get("type") == "scytales":
         
         url = "https://" + cfgserv.url_scytales_verifier +"/ui/presentations"
 
@@ -310,7 +310,7 @@ responses:
 
     presentation_id= request.args.get("presentation_id")
 
-    if request.args.get("type") and request.args.get("Type") == "scytales":
+    if request.args.get("type") and request.args.get("type") == "scytales":
       url = "https://" + cfgserv.url_scytales_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
     else:
       url = "https://" + cfgserv.url_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
@@ -378,7 +378,7 @@ responses:
     else:
         presentation_id = request.args.get("presentation_id")
 
-        if request.args.get("type") and request.args.get("Type") == "scytales":
+        if request.args.get("type") and request.args.get("type") == "scytales":
           url = "https://" + cfgserv.url_scytales_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
         else:           
           url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
