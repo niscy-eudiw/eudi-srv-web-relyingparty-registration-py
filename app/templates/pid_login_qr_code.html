@@ -108,7 +108,7 @@ function Ajax_request() {
         data:{"presentation_id": presentation_id },
         success: function(response) {
             console.log('Success:', response);
-            window.location.replace(location.origin + "/getpidoid4vp?presentation_id=" + presentation_id);
+            window.location.replace(location.origin + "/getpidoid4vp?type=scytales&presentation_id=" + presentation_id);
             clearInterval(intervalId);
             
         },
