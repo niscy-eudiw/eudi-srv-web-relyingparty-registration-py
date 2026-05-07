@@ -7130,7 +7130,7 @@ def guide():
     return render_template("guide.html")
 
 
-@rpr.route("/teste1", methods=["GET"])
+#@rpr.route("/teste1", methods=["GET"])
 def teste1():
     import requests
 
