@@ -392,11 +392,11 @@ responses:
         error_msg= str(response.status_code)
         return jsonify({"error": error_msg}),400
     
-    error, error_msg= validate_vp_token(response.json())
-
+    error, error_msg= validate_vp_token(response.json(), request.args.get("type"))
+    
     if error == True:
         return error_msg
-    
+
     mdoc_json = cbor2elems(response.json()["vp_token"]["query_0"][0] + "==")
 
     attributesForm={}
