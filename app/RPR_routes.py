@@ -136,58 +136,57 @@ responses:
           example: 550e8400-e29b-41d4-a716-446655440000
 """
 
-    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
     payload ={
-        "type": "vp_token",
-        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
-        "dcql_query": {
-            "credentials": [
-            {
-                "id": "query_0",
-                "format": "mso_mdoc",
-                "meta": {
-                "doctype_value": "eu.europa.ec.eudi.pid.1"
-                },
-                "claims": [
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "family_name"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "given_name"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "birth_date"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "issuing_authority"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "issuing_country"
-                    ],
-                    "intent_to_retain": False
-                }
-                ]
-            }
-            ]
-        }
+      "type": "vp_token",
+      "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
+      "dcql_query": {
+          "credentials": [
+          {
+              "id": "query_0",
+              "format": "mso_mdoc",
+              "meta": {
+              "doctype_value": "eu.europa.ec.eudi.pid.1"
+              },
+              "claims": [
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "family_name"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "given_name"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "birth_date"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "issuing_authority"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "issuing_country"
+                  ],
+                  "intent_to_retain": False
+              }
+              ]
+          }
+          ]
+      }
     }
 
 
@@ -195,34 +194,70 @@ responses:
         "Content-Type": "application/json",
     }
 
-    response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
-    
+    if request.args.get("type") and request.args.get("type") == "scytales":
+        
+        url = "https://" + cfgserv.url_scytales_verifier +"/ui/presentations"
 
-    QR_code_url = (
-        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
-        + response["client_id"]
-        + "&request_uri="
-        + response["request_uri"]
-    )
+        response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
+        
 
-    
-    session["session_id"]=str(uuid.uuid4())
-    session["certificate_List"]=False
+        QR_code_url = (
+            "mdoc-openid4vp://" + cfgserv.url_scytales_verifier + "?client_id="
+            + response["client_id"]
+            + "&request_uri="
+            + response["request_uri"]
+        )
 
-    qrcode = segno.make(QR_code_url)
-    out = io.BytesIO()
-    qrcode.save(out, kind='png', scale=3)
+        
+        session["session_id"]=str(uuid.uuid4())
+        session["certificate_List"]=False
 
-    """ qrcode.to_artistic(
-        background=cfgtest.qr_png,
-        target=out,
-        kind="png",
-        scale=4,
-    ) """
+        qrcode = segno.make(QR_code_url)
+        out = io.BytesIO()
+        qrcode.save(out, kind='png', scale=3)
 
-    qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
-        "utf-8"
-    )
+        """ qrcode.to_artistic(
+            background=cfgtest.qr_png,
+            target=out,
+            kind="png",
+            scale=4,
+        ) """
+
+        qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
+            "utf-8"
+        )
+
+    else:
+      url = "https://" + cfgserv.url_verifier +"/ui/presentations"
+      
+      response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
+      
+
+      QR_code_url = (
+          "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
+          + response["client_id"]
+          + "&request_uri="
+          + response["request_uri"]
+      )
+
+      
+      session["session_id"]=str(uuid.uuid4())
+      session["certificate_List"]=False
+
+      qrcode = segno.make(QR_code_url)
+      out = io.BytesIO()
+      qrcode.save(out, kind='png', scale=3)
+
+      """ qrcode.to_artistic(
+          background=cfgtest.qr_png,
+          target=out,
+          kind="png",
+          scale=4,
+      ) """
+
+      qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
+          "utf-8"
+      )
 
     return_json = {
         "QR_code_url": QR_code_url,
@@ -275,7 +310,11 @@ responses:
 
     presentation_id= request.args.get("presentation_id")
 
-    url = "https://" + cfgserv.url_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+    if request.args.get("type") and request.args.get("type") == "scytales":
+      url = "https://" + cfgserv.url_scytales_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+    else:
+      url = "https://" + cfgserv.url_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+    
     headers = {
     'Content-Type': 'application/json',
     }
@@ -338,7 +377,11 @@ responses:
         }, 400
     else:
         presentation_id = request.args.get("presentation_id")
-        url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+
+        if request.args.get("type") and request.args.get("type") == "scytales":
+          url = "https://" + cfgserv.url_scytales_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+        else:           
+          url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
     
     headers = {
     'Content-Type': 'application/json',
@@ -349,11 +392,11 @@ responses:
         error_msg= str(response.status_code)
         return jsonify({"error": error_msg}),400
     
-    error, error_msg= validate_vp_token(response.json())
-
+    error, error_msg= validate_vp_token(response.json(), request.args.get("type"))
+    
     if error == True:
         return error_msg
-    
+
     mdoc_json = cbor2elems(response.json()["vp_token"]["query_0"][0] + "==")
 
     attributesForm={}
@@ -380,7 +423,55 @@ responses:
         return (hash_pid)
     else:
         return (hash_pid)
+
+@rpr.route("/user_auth", methods=["GET", "POST"])
+def user_auth():
     
+    temp_user_id = session['temp_user_id']
+
+    #user data
+    user_data_pid = session[temp_user_id]
+
+    # address = request.form.get('address')
+    # email = request.form.get('email')
+    # phone_number = request.form.get('phone_number')
+    # country = request.form.get('Country')
+    # identifier= request.form.get("Identifier")
+    # info_uri = request.form.get("Information URI")
+
+    #introduzir os dados na BD legal entity
+    #check = func.user_db_info(role, operator_name, PostalAddress, electronicAddress, user['id'], session["session_id"])
+
+    return redirect(url_for('RPR.menu_RP_user'))
+    
+@rpr.route('/menu', methods=['GET','POST'])
+def menu_RP_user():
+    temp_user_id = session['temp_user_id']
+    user = session[temp_user_id]
+    
+    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
+
+@rpr.route('/natural_person/create_person', methods=['GET','POST'])
+def create_natural_person():
+
+    attributesForm={}
+
+    form_items={
+        "Given Name":"string",
+        "Family Name":"string",
+        "Date of Birth": "full-date",
+        "Place of Birth": "string",
+    }
+    descriptions = {
+        "Given Name":"First name(s) of the natural person including middle name(s) where applicable",
+        "Family Name":"Last name(s) or surnames of the natural person",
+        "Date of Birth": "Date of birth of the natural person",
+        "Place of Birth": "Place of birth of the natural person",
+    }
+    attributesForm.update(form_items)
+
+    return render_template("dynamic-form.html",title="Create Natural Person",title_description="Please enter your Natural Person data.", desc = descriptions, countries = cfgserv.eu_countries ,attributes=attributesForm, redirect_url= cfgserv.service_url + "natural_person/add_natural_person_db")
+
 @rpr.route('/natural_person/add_natural_person_db', methods=['POST'])
 def add_natural_person_db():
     """
@@ -6172,3 +6263,42 @@ def swagger_static():
 @rpr.route("/guide")
 def guide():
     return render_template("guide.html")
+
+
+#@rpr.route("/teste1", methods=["GET"])
+def teste1():
+    import requests
+
+    url = cfgserv.service_url+"authentication?type=scytales"
+
+    payload = {}
+    headers = {
+    'Cookie': 'session=yq_XAU-7NFKcnJSCdwkSzNXAlOKzsyn_dew9_oI0au4'
+    }
+
+    response = requests.request("GET", url, headers=headers, data=payload)
+
+    qrcode = segno.make(response.json()["QR_code_url"])
+    out = io.BytesIO()
+    qrcode.save(out, kind='png', scale=3)
+
+    """ qrcode.to_artistic(
+        background=cfgtest.qr_png,
+        target=out,
+        kind="png",
+        scale=4,
+    ) """
+    # qrcode.terminal()
+    # qr_img_base64 = qrcode.png_data_uri(scale=4)
+
+    qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
+        "utf-8"
+    )
+
+    return render_template(
+        "pid_login_qr_code.html",
+        url_data="deeplink_url",
+        qrcode=qr_img_base64,
+        presentation_id=response.json()["presentation_id"],
+        redirect_url= cfgserv.service_url
+    )
