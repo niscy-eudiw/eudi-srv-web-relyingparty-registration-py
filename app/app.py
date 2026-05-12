@@ -27,7 +27,22 @@ from app import create_app
 
 from app.app_config.config import ConfService
 
+from authlib.integrations.flask_client import OAuth
+
+from app.app_config.scytales_connector import scytales
+
 app = create_app()
+
+oauth = OAuth(app)
+
+# Register Scytales Wallet Connector
+oauth.register(
+    name=scytales.name,
+    client_id=scytales.client_id,
+    client_secret=scytales.client_secret,
+    server_metadata_url=scytales.server_metadata_url,
+    client_kwargs=scytales.client_kwargs
+)
     
 #certs_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), 'certs'))
 

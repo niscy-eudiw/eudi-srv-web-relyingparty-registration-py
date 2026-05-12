@@ -96,10 +96,12 @@ import user as get_hash_user_pid
 from app.data_management import oid4vp_requests,p12_temp, certificate_data_List
 
 from app import logger
+from app.app import oauth
 
 rpr = Blueprint("RPR", __name__, url_prefix="/")
 
 rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template/')
+
 
 def validate_required_fields(data, required_fields):
     missing = []
@@ -265,6 +267,10 @@ responses:
     headers = {
         "Content-Type": "application/json",
     }
+    if request.args.get("type") and request.args.get("type") == "scytales_connector":
+
+        redirect_uri = url_for('callback', _external=True)
+        return oauth.scytales.authorize_redirect(redirect_uri)
 
     if request.args.get("type") and request.args.get("type") == "scytales":
         
@@ -337,6 +343,69 @@ responses:
     }
 
     return (return_json)
+
+@rpr.route("/callback", methods=["GET", "POST"])
+def callback():
+    """
+Get PID (OID4VP)
+---
+tags:
+  - Authentication
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: query
+    name: presentation_id
+    required: true
+    type: string
+    description: Transaction identifier received from the authentication step
+    example: 550e8400-e29b-41d4-a716-446655440000
+
+responses:
+  200:
+    description: PID retrieved successfully
+    schema:
+      type: string
+      example: abc123hashpid
+
+  400:
+    description: Missing presentation_id
+    schema:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        code:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: Missing presentation_id
+"""
+    token = oauth.scytales.authorize_access_token()
+    # Authlib extracts claims from the ID token into the token object
+    # For this IDP, claims are in the ID token (not requiring a separate userinfo call)
+    user = token.get('userinfo', token.get('id_token_claims', {}))
+
+    givenName=user.get("given_name")
+    surname=user.get("family_name")
+    birth_date=user.get("birth_date")
+    issuing_country=user.get("issuing_country")
+    issuance_authority=user.get("issuing_authority")
+
+    new_user = get_hash_user_pid.User(surname, givenName, birth_date, issuing_country, issuance_authority)
+    hash_pid = new_user.hash
+
+    check_user = db.check_user(hash_pid)
+    
+    if(check_user == None):
+        db.insert_user(hash_pid)
+        return (hash_pid)
+    else:
+        return (hash_pid)
 
 @rpr.route("/pid_authorization")
 def pid_authorization_get():
