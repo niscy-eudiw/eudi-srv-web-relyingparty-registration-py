@@ -179,6 +179,7 @@ def initial_page():
     return render_template('initial_page.html', redirect_url= cfgserv.service_url, pid_auth = cfgserv.service_url + "authentication")
 
 
+
 @rpr.route("/authentication", methods=["GET"])
 def authentication():
     """
@@ -207,58 +208,57 @@ responses:
           example: 550e8400-e29b-41d4-a716-446655440000
 """
 
-    url = "https://" + cfgserv.url_verifier +"/ui/presentations"
     payload ={
-        "type": "vp_token",
-        "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
-        "dcql_query": {
-            "credentials": [
-            {
-                "id": "query_0",
-                "format": "mso_mdoc",
-                "meta": {
-                "doctype_value": "eu.europa.ec.eudi.pid.1"
-                },
-                "claims": [
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "family_name"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "given_name"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "birth_date"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "issuing_authority"
-                    ],
-                    "intent_to_retain": False
-                },
-                {
-                    "path": [
-                    "eu.europa.ec.eudi.pid.1",
-                    "issuing_country"
-                    ],
-                    "intent_to_retain": False
-                }
-                ]
-            }
-            ]
-        }
+      "type": "vp_token",
+      "nonce": "hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc=",
+      "dcql_query": {
+          "credentials": [
+          {
+              "id": "query_0",
+              "format": "mso_mdoc",
+              "meta": {
+              "doctype_value": "eu.europa.ec.eudi.pid.1"
+              },
+              "claims": [
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "family_name"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "given_name"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "birth_date"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "issuing_authority"
+                  ],
+                  "intent_to_retain": False
+              },
+              {
+                  "path": [
+                  "eu.europa.ec.eudi.pid.1",
+                  "issuing_country"
+                  ],
+                  "intent_to_retain": False
+              }
+              ]
+          }
+          ]
+      }
     }
 
 
@@ -266,34 +266,70 @@ responses:
         "Content-Type": "application/json",
     }
 
-    response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
-    
+    if request.args.get("type") and request.args.get("type") == "scytales":
+        
+        url = "https://" + cfgserv.url_scytales_verifier +"/ui/presentations"
 
-    QR_code_url = (
-        "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
-        + response["client_id"]
-        + "&request_uri="
-        + response["request_uri"]
-    )
+        response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
+        
 
-    
-    session["session_id"]=str(uuid.uuid4())
-    session["certificate_List"]=False
+        QR_code_url = (
+            "mdoc-openid4vp://" + cfgserv.url_scytales_verifier + "?client_id="
+            + response["client_id"]
+            + "&request_uri="
+            + response["request_uri"]
+        )
 
-    qrcode = segno.make(QR_code_url)
-    out = io.BytesIO()
-    qrcode.save(out, kind='png', scale=3)
+        
+        session["session_id"]=str(uuid.uuid4())
+        session["certificate_List"]=False
 
-    """ qrcode.to_artistic(
-        background=cfgtest.qr_png,
-        target=out,
-        kind="png",
-        scale=4,
-    ) """
+        qrcode = segno.make(QR_code_url)
+        out = io.BytesIO()
+        qrcode.save(out, kind='png', scale=3)
 
-    qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
-        "utf-8"
-    )
+        """ qrcode.to_artistic(
+            background=cfgtest.qr_png,
+            target=out,
+            kind="png",
+            scale=4,
+        ) """
+
+        qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
+            "utf-8"
+        )
+
+    else:
+      url = "https://" + cfgserv.url_verifier +"/ui/presentations"
+      
+      response = requests.request("POST", url, headers=headers, data=json.dumps(payload)).json()
+      
+
+      QR_code_url = (
+          "eudi-openid4vp://" + cfgserv.url_verifier + "?client_id="
+          + response["client_id"]
+          + "&request_uri="
+          + response["request_uri"]
+      )
+
+      
+      session["session_id"]=str(uuid.uuid4())
+      session["certificate_List"]=False
+
+      qrcode = segno.make(QR_code_url)
+      out = io.BytesIO()
+      qrcode.save(out, kind='png', scale=3)
+
+      """ qrcode.to_artistic(
+          background=cfgtest.qr_png,
+          target=out,
+          kind="png",
+          scale=4,
+      ) """
+
+      qr_img_base64 = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode(
+          "utf-8"
+      )
 
     return_json = {
         "QR_code_url": QR_code_url,
@@ -346,7 +382,11 @@ responses:
 
     presentation_id= request.args.get("presentation_id")
 
-    url = "https://" + cfgserv.url_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+    if request.args.get("type") and request.args.get("type") == "scytales":
+      url = "https://" + cfgserv.url_scytales_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+    else:
+      url = "https://" + cfgserv.url_verifier+ "/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+    
     headers = {
     'Content-Type': 'application/json',
     }
@@ -409,7 +449,11 @@ responses:
         }, 400
     else:
         presentation_id = request.args.get("presentation_id")
-        url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+
+        if request.args.get("type") and request.args.get("type") == "scytales":
+          url = "https://" + cfgserv.url_scytales_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
+        else:           
+          url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
     
     headers = {
     'Content-Type': 'application/json',
@@ -420,11 +464,11 @@ responses:
         error_msg= str(response.status_code)
         return jsonify({"error": error_msg}),400
     
-    error, error_msg= validate_vp_token(response.json())
-
+    error, error_msg= validate_vp_token(response.json(), request.args.get("type"))
+    
     if error == True:
         return error_msg
-    
+
     mdoc_json = cbor2elems(response.json()["vp_token"]["query_0"][0] + "==")
 
     attributesForm={}

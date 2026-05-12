@@ -38,7 +38,7 @@ from . import trusted_CAs
 from app_config.config import ConfService as cfgservice
 
 
-def validate_vp_token(response_json):
+def validate_vp_token(response_json, type = None):
     """
     Validate VP token, checking document and presentation_submission attributes
     """
@@ -80,9 +80,11 @@ def validate_vp_token(response_json):
 
         return True, "Status invalid:" + str(mdoc_cbor["status"])
 
-    print("\nmdoc_cbor: ", mdoc_cbor)
-
-    error, errorMsg = validate_certificate(mdoc_cbor["documents"][0])
+    error = True
+    errorMsg = ""
+    
+    if type != 'scytales':
+        error, errorMsg = validate_certificate(mdoc_cbor["documents"][0])
 
     if error == False:
 
