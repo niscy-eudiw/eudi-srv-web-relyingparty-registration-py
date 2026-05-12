@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://dev.registry.serviceproviders.eudiw.dev/"
+      "url": "https://registry.serviceproviders.eudiw.dev/"
     }
   ],
   "paths": {

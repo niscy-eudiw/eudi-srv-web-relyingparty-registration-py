@@ -443,34 +443,6 @@ def user_auth():
     #check = func.user_db_info(role, operator_name, PostalAddress, electronicAddress, user['id'], session["session_id"])
 
     return redirect(url_for('RPR.menu_RP_user'))
-    
-@rpr.route('/menu', methods=['GET','POST'])
-def menu_RP_user():
-    temp_user_id = session['temp_user_id']
-    user = session[temp_user_id]
-    
-    return render_template("rp_user_menu.html", user = user['given_name'], temp_user_id = temp_user_id)
-
-@rpr.route('/natural_person/create_person', methods=['GET','POST'])
-def create_natural_person():
-
-    attributesForm={}
-
-    form_items={
-        "Given Name":"string",
-        "Family Name":"string",
-        "Date of Birth": "full-date",
-        "Place of Birth": "string",
-    }
-    descriptions = {
-        "Given Name":"First name(s) of the natural person including middle name(s) where applicable",
-        "Family Name":"Last name(s) or surnames of the natural person",
-        "Date of Birth": "Date of birth of the natural person",
-        "Place of Birth": "Place of birth of the natural person",
-    }
-    attributesForm.update(form_items)
-
-    return render_template("dynamic-form.html",title="Create Natural Person",title_description="Please enter your Natural Person data.", desc = descriptions, countries = cfgserv.eu_countries ,attributes=attributesForm, redirect_url= cfgserv.service_url + "natural_person/add_natural_person_db")
 
 @rpr.route('/natural_person/add_natural_person_db', methods=['POST'])
 def add_natural_person_db():
