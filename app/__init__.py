@@ -230,7 +230,7 @@ def create_app():
     # CORS is a mechanism implemented by browsers to block requests from domains other than the server's one.
     CORS(app, supports_credentials=True)
 
-    oauth(app)
+    oauth.init_app(app)
 
     # Register Scytales Wallet Connector
     oauth.register(
