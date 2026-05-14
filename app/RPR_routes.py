@@ -101,7 +101,14 @@ from . import oauth
 
 rpr = Blueprint("RPR", __name__, url_prefix="/")
 
-oauth_client = oauth.create_client(scytales.name)
+# Register Scytales Wallet Connector
+oauth.register(
+    name=scytales.name,
+    client_id=scytales.client_id,
+    client_secret=scytales.client_secret,
+    server_metadata_url=scytales.server_metadata_url,
+    client_kwargs=scytales.client_kwargs
+)
 
 rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template/')
 
@@ -199,7 +206,9 @@ responses:
     if request.args.get("type") and request.args.get("type") == "scytales_connector":
 
         redirect_uri = url_for('callback', _external=True)
-        return oauth_client.authorize_redirect(redirect_uri)
+        client = oauth.create_client(scytales.name)
+
+        return client.authorize_redirect(redirect_uri)
 
 
     if request.args.get("type") and request.args.get("type") == "scytales":
@@ -315,7 +324,7 @@ responses:
           type: string
           example: Missing presentation_id
 """
-    token = oauth_client.authorize_access_token()
+    token = oauth.scytales.authorize_access_token()
     # Authlib extracts claims from the ID token into the token object
     # For this IDP, claims are in the ID token (not requiring a separate userinfo call)
     user = token.get('userinfo', token.get('id_token_claims', {}))

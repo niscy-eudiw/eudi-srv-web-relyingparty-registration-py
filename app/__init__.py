@@ -215,8 +215,9 @@ def create_app():
         SWAGGER_URL, API_URL,
         config={"app_name": "My Flask API"}
     )
+    oauth.init_app(app)
     from . import (RPR_routes)
-
+    
     app.register_blueprint(RPR_routes.rpr)
     app.register_blueprint(swagger_ui_blueprint, url_prefix=SWAGGER_URL)
 
@@ -229,16 +230,5 @@ def create_app():
 
     # CORS is a mechanism implemented by browsers to block requests from domains other than the server's one.
     CORS(app, supports_credentials=True)
-
-    oauth.init_app(app)
-
-    # Register Scytales Wallet Connector
-    oauth.register(
-        name=scytales.name,
-        client_id=scytales.client_id,
-        client_secret=scytales.client_secret,
-        server_metadata_url=scytales.server_metadata_url,
-        client_kwargs=scytales.client_kwargs
-    )
 
     return app
