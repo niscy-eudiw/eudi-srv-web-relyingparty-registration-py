@@ -55,6 +55,11 @@ import os
 from app_config.database import ConfDataBase
 from flasgger import Swagger
 
+from authlib.integrations.flask_client import OAuth
+from app.app_config.scytales_connector import scytales
+
+oauth = OAuth()
+
 def setup_logger():
     log_dir = cfgserv.log_dir
     if not os.path.exists(log_dir):
@@ -224,5 +229,16 @@ def create_app():
 
     # CORS is a mechanism implemented by browsers to block requests from domains other than the server's one.
     CORS(app, supports_credentials=True)
+
+    oauth(app)
+
+    # Register Scytales Wallet Connector
+    oauth.register(
+        name=scytales.name,
+        client_id=scytales.client_id,
+        client_secret=scytales.client_secret,
+        server_metadata_url=scytales.server_metadata_url,
+        client_kwargs=scytales.client_kwargs
+    )
 
     return app

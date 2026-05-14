@@ -94,14 +94,16 @@ from app_config.Crypto_Info import Crypto_Info as crypto
 import models as db
 import user as get_hash_user_pid
 from app.data_management import oid4vp_requests,p12_temp, certificate_data_List
+from app.app_config.scytales_connector import scytales
 
 from app import logger
-from app.app import oauth
+from . import oauth
 
 rpr = Blueprint("RPR", __name__, url_prefix="/")
 
-rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template/')
+oauth_client = oauth.create_client(scytales.name)
 
+rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template/')
 
 @rpr.route('/', methods=['GET','POST'])
 def initial_page():
@@ -197,7 +199,7 @@ responses:
     if request.args.get("type") and request.args.get("type") == "scytales_connector":
 
         redirect_uri = url_for('callback', _external=True)
-        return oauth.scytales.authorize_redirect(redirect_uri)
+        return oauth_client.authorize_redirect(redirect_uri)
 
 
     if request.args.get("type") and request.args.get("type") == "scytales":
@@ -313,7 +315,7 @@ responses:
           type: string
           example: Missing presentation_id
 """
-    token = oauth.scytales.authorize_access_token()
+    token = oauth_client.authorize_access_token()
     # Authlib extracts claims from the ID token into the token object
     # For this IDP, claims are in the ID token (not requiring a separate userinfo call)
     user = token.get('userinfo', token.get('id_token_claims', {}))
