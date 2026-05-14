@@ -96,7 +96,7 @@ import user as get_hash_user_pid
 from app.data_management import oid4vp_requests,p12_temp, certificate_data_List
 
 from app import logger
-from app import oauth
+from app.app import oauth
 
 rpr = Blueprint("RPR", __name__, url_prefix="/")
 
