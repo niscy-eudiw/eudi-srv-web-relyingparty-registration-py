@@ -321,8 +321,8 @@ responses:
     givenName=user.get("given_name")
     surname=user.get("family_name")
     birth_date=user.get("birth_date")
-    issuing_country=user.get("issuing_country")
-    issuance_authority=user.get("issuing_authority")
+    issuing_country=user.get("resident_country")
+    issuance_authority=""
 
     new_user = get_hash_user_pid.User(surname, givenName, birth_date, issuing_country, issuance_authority)
     hash_pid = new_user.hash
