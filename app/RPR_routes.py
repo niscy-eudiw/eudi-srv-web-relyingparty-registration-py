@@ -205,7 +205,7 @@ responses:
     }
     if request.args.get("type") and request.args.get("type") == "scytales_connector":
 
-        redirect_uri = url_for('callback', _external=True)
+        redirect_uri = url_for('RPR.callback', _external=True)
         client = oauth.create_client(scytales.name)
 
         return client.authorize_redirect(redirect_uri)
