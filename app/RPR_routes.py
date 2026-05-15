@@ -208,6 +208,7 @@ responses:
 
         redirect_uri = "https://registry.serviceproviders.eudiw.dev/callback"
 
+        print("client.name", client.name)
         return client.authorize_redirect(redirect_uri)
 
 
@@ -324,6 +325,7 @@ responses:
           type: string
           example: Missing presentation_id
 """
+    print("client.name", client.name)
     token = client.authorize_access_token()
     # Authlib extracts claims from the ID token into the token object
     # For this IDP, claims are in the ID token (not requiring a separate userinfo call)
