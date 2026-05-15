@@ -206,7 +206,6 @@ responses:
     if request.args.get("type") and request.args.get("type") == "scytales_connector":
 
         redirect_uri = "https://registry.serviceproviders.eudiw.dev/callback"
-        print("redirect_uri = ", redirect_uri)
         client = oauth.create_client(scytales.name)
 
         return client.authorize_redirect(redirect_uri)
@@ -325,7 +324,8 @@ responses:
           type: string
           example: Missing presentation_id
 """
-    token = oauth.scytales.authorize_access_token()
+    client = oauth.create_client(scytales.name)
+    token = client.authorize_access_token()
     # Authlib extracts claims from the ID token into the token object
     # For this IDP, claims are in the ID token (not requiring a separate userinfo call)
     user = token.get('userinfo', token.get('id_token_claims', {}))
