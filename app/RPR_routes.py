@@ -109,6 +109,7 @@ oauth.register(
     server_metadata_url=scytales.server_metadata_url,
     client_kwargs=scytales.client_kwargs
 )
+client = oauth.create_client(scytales.name)
 
 rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template/')
 
@@ -206,7 +207,6 @@ responses:
     if request.args.get("type") and request.args.get("type") == "scytales_connector":
 
         redirect_uri = "https://registry.serviceproviders.eudiw.dev/callback"
-        client = oauth.create_client(scytales.name)
 
         return client.authorize_redirect(redirect_uri)
 
@@ -324,7 +324,6 @@ responses:
           type: string
           example: Missing presentation_id
 """
-    client = oauth.create_client(scytales.name)
     token = client.authorize_access_token()
     # Authlib extracts claims from the ID token into the token object
     # For this IDP, claims are in the ID token (not requiring a separate userinfo call)
