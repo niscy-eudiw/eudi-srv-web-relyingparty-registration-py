@@ -91,6 +91,7 @@ from app_config.config import ConfService as cfgserv
 
 from app_config.EJBCA_config import EJBCA_Config as ejbca
 from app_config.Crypto_Info import Crypto_Info as crypto
+from app_config.HSM_Signer_config import hsm_signer
 import models as db
 import user as get_hash_user_pid
 from app.data_management import oid4vp_requests,p12_temp, certificate_data_List
@@ -2784,19 +2785,56 @@ def intended_use_registration_certificate():
 
     cbor_data= cbor2.dumps(json_payload)
 
-    msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
+    cbor_data_b64= base64.urlsafe_b64encode(cbor_data)
 
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        pem_bytes = f.read()
+    #HSM_SIGNER
 
-    cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
-    msg.key = cose_key
-    cose_bytes = msg.encode()
+    url= hsm_signer.hsm_signer_url
+
+    hsm_payload={
+        "hsmID":hsm_signer.hsmID,
+        "data":cbor_data_b64,
+        "algoritm":"SHA256withECDSA"
+    }
+
+    hsm_headers={
+        'Content-Type': 'application/json',
+        'X-API-Key': hsm_signer.API_key
+    }
+
+    sign_HSM = requests.request("POST", url, headers=hsm_headers, verify=hsm_signer.cert_location ,data=json.dumps(hsm_payload)).json()
+
+    signature = sign_HSM["signature"]
+
+    protected = cbor2.dumps({
+        1: -7  
+    })
+
+    unprotected={}
+
+    signed_cbor=[
+        protected,
+        unprotected,
+        cbor_data,
+        base64.b64decode(signature)
+
+    ]
+
+    encoded = cbor2.dumps(signed_cbor)
+
+    # msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
+
+    # with open(cfgserv.wrprc_privateKey, "rb") as f:
+    #     pem_bytes = f.read()
+
+    # cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
+    # msg.key = cose_key
+    # cose_bytes = msg.encode()
 
     file_data = base64.b64decode(document_with_signature)
 
     file_base64 = base64.b64encode(file_data).decode()
-    cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
+    cose_base64 = base64.urlsafe_b64encode(encoded).decode()
 
     return jsonify({
         "status": "success",
