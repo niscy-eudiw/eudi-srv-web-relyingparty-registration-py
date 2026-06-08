@@ -2815,7 +2815,7 @@ def intended_use_registration_certificate():
     signed_cbor=[
         protected,
         unprotected,
-        cbor_data,
+        json_payload,
         base64.b64decode(signature)
 
     ]
