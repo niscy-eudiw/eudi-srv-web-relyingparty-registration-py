@@ -2802,7 +2802,7 @@ def intended_use_registration_certificate():
         'X-API-Key': hsm_signer.API_key
     }
 
-    sign_HSM = requests.request("POST", url, headers=hsm_headers, verify=hsm_signer.cert_location ,data=json.dumps(hsm_payload)).json()
+    sign_HSM = requests.request("POST", url, headers=hsm_headers ,data=json.dumps(hsm_payload)).json()
 
     signature = sign_HSM["signature"]
 
