@@ -8,17 +8,30 @@ the [EUDI Wallet Reference Implementation project description](https://github.co
 
 ## Overview
 
-As per the [European Digital Identity Wallet Architecture and Reference Framework Trust Model](https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/arf.md#6-trust-model),
+As per the [European Digital Identity Wallet Architecture and Reference Framework Trust Model](https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md),
 
 + Relying Parties are registered by a Relying Party Registrar in their Member State.
-+ As a result of the registration, a Relying Party receives an access certificate from a Relying Party Access CA.
++ As a result of the registration, a Relying Party receives an access certificate (WRPAC) from a Relying Party Access CA and a registration certificate (WRPRC).
 
 + The RP access certificate is used by the Wallet Instance to authenticate the Relying Party Instance.
++ The RP registration certificate is used by the Wallet Instance to access the intended use and attribute access policies of a WRP.
 
 + Relying Party authentication is a process whereby a Relying Party proves its identity to a Wallet Instance, in the context of a transaction in which the Relying Party requests the Wallet Instance to release some attributes.
 + Relying Party authentication is included in the protocol used (both in ISO/IEC 18013-5 and OpenID4VP) by a Wallet Instance and a Relying Party Instance to communicate. 
 
+For more detailed information:
 
++ [Registrars](https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md#317-registrars)
++ [Access Certificate Authorities](https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md#318-access-certificate-authorities)
++ [Providers of registration certificates](https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md#319-providers-of-registration-certificates)
++ [CIR 2025/848](https://eur-lex.europa.eu/eli/reg_impl/2025/848/oj),
++ [TS5](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts5-common-formats-and-api-for-rp-registration-information.md)
++ [TS6](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts6-common-set-of-rp-information-to-be-registered.md)
+
+The Relying Party Registration complies with the requirements set out by the [CIR 2025/848](https://eur-lex.europa.eu/eli/reg_impl/2025/848/oj), [TS5](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts5-common-formats-and-api-for-rp-registration-information.md) and [TS6](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts6-common-set-of-rp-information-to-be-registered.md).
+
+The RP access certificate format complies with [ETSI TS 119 411-8](https://www.etsi.org/deliver/etsi_ts/119400_119499/11941108/01.01.01_60/ts_11941108v010101p.pdf).
+The RP registration certificate format complies with [ETSI TS 119 475](https://www.etsi.org/deliver/etsi_ts/119400_119499/119475/01.02.01_60/ts_119475v010201p.pdf).
 
 The Relying Party Registration Service provides two main functionalities:
 
