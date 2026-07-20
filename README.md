@@ -87,81 +87,103 @@ Pre-requisites:
 
 Steps: 
 
-1. Enter the project folder
+To run the EUDIW Issuer, please follow these simple steps (some of which may have already been completed when installing Flask) for Linux/macOS or Windows.
 
-  ```shell
-  cd eudi-srv-web-relyingparty-registration-py
-  ```
 
-2. Create .venv to install flask and other libraries
+1. Clone the EUDIW Issuer repository:
 
-  Windows:
-  
-  ```shell
-  python -m venv .venv 
-  ```
-  
-  Linux:
+    ```shell
+    git clone git@github.com:eu-digital-identity-wallet/eudi-srv-web-relyingparty-registration-py.git
+    ```
 
-  ```shell
-  python3 -m venv .venv
-  ```
 
-3. Activate the environment
+2. Enter the project folder
 
-  windows:
+    ```shell
+    cd eudi-srv-web-relyingparty-registration-py
+    ```
+
+3. Create .venv to install flask and other libraries
+
+    Windows:
     
-  ```shell
-  . .venv\Scripts\Activate
-  ```
+    ```shell
+    python -m venv .venv 
+    ```
     
-  Linux:
-  
-  ```shell
-  . .venv/bin/activate
-  ```
+    Linux:
+
+    ```shell
+    python3 -m venv .venv
+    ```
+
+4. Activate the environment
+
+    windows:
+      
+    ```shell
+    . .venv\Scripts\Activate
+    ```
+      
+    Linux:
     
-4. Install the necessary libraries to run the code
+    ```shell
+    . .venv/bin/activate
+    ```
+    
+5. Install the necessary libraries to run the code
 
-  ```shell
-  pip install -r app/requirements.txt
-  ```
+    ```shell
+    pip install -r app/requirements.txt
+    ```
 
-5. Run the Project
-  ```shell
-  flask --app app run
-  ```
+6. Run the Project
+
+    ```shell
+    flask --app app run
+    ```
 
 ## Run
 
 ### 1. Database
      
-To create the database use the app/relying_party_reg.sql file. It has been tested with MariaDB version 11.5.
+To create the database use the [app/relying_party_reg.sql](app/relying_party_reg.sql) file. It has been tested with MariaDB version 11.5.
   
-The file app/app_config/database.py is used to configure the data needed to connect to the database.
+The file [app/app_config/database.py](app/app_config/database.py) is used to configure the data needed to connect to the database.
+
+
 
 ### 2. EJBCA
   
 The service needs a connection to an EJBCA (<https://www.ejbca.org/>) instance, in order to issue the certificates.
-The configuration file for defining access credentials and the location of the admin's PKCS#12 Keystore file and its corresponding password can be found at app/app_config/EJBCA_config.py.
+The configuration file for defining access credentials and the location of the admin's PKCS#12 Keystore file and its corresponding password can be found at [app/app_config/EJBCA_config.py](app/app_config/EJBCA_config.py).
 
-### 3. Initial Page
++ clientP12ArchiveFilepath - Path for the .p12 needed for the client certificate authentication
++ clientP12ArchivePassword - .p12 password
++ certificateProfilename - Certificate Profile Name already created in EJBCA
++ endEntityProfileName - End Entity Profile name already created in EJBCA
++ username - End Entity username
++ password - End Entity password
 
-The initial Page of the Relying Party Registration Service (<http://127.0.0.1:5000/> or <http://localhost:5000/>) presents one options:
+### 3. Status List Service
 
-+ Guide: <http://localhost:5000/guide>
+According to ETSI 119 475 - V1.2.1, the WRPRC must be associated with a Status List to provide information about the WRPRC’s validity.
+
+The WRPRC shall ensure that each WRPRC includes a reference to:
+• the status list’s unique identifier (e.g., URI); and
+• the position index assigned to that WRPRC within the status list.
+
+To this effect, integration with the [eudi-srv-statuslist-py](https://github.com/eu-digital-identity-wallet/eudi-srv-statuslist-py) service was implemented. 
+
+The connection is made via the **url_statuslist** defined in the file [app/app_config/config.py](app/app_config/config.py)
     
-#### 3.1. (optional) Integrate with EUDI Verifier Endpoint
-  
-To integrate with the [EUDI Verifier Endpoint to mount an external keystore to be used with Authorization Request signing in](https://github.com/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt?tab=readme-ov-file#mount-external-keystore-to-be-used-with-authorization-request-signing), please use the following command line to convert the downloaded pkcs#12 file to a JKS file:
+### 4. Initial Page
 
-```shell
-keytool -importkeystore -srckeystore [FileIn.p12] -srcstoretype pkcs12 -destkeystore [FileOUT.jks] -deststoretype jks -deststorepass [passwordJKS] 
-```
+The initial Page of the Relying Party Registration Service (http://127.0.0.1:5000/ or http://localhost:5000/). 
 
-+ FileIn.p12 - .p12 file generated in Relying Party Registration
-+ FileOUT.jks - Path to the keystore
-+ passwordJKS - password for .jks file (minimum 6 characters)
+The http://localhost:5000/guide contains an overview of the standard workflow and endpoints of the Registrar Service.
+
+The http://localhost:5000/apidodcs contains the Swagger documentation.
 
 ## Run docker
 
@@ -200,10 +222,10 @@ Variable: `LOG_PATH`<br>
 Description: Path where log files are saved
 
 Variable: `CERT`<br>
-Description: Container path where the XML signing certificate is stored
+Description: Container path where the WRPRC signing certificate is stored
 
 Variable: `PRIV_KEY`<br>
-Description: Container path where the private key of the XML signing certificate is stored
+Description: Container path where the private key of the WRPRC signing certificate is stored
 
 Variable: `DB_HOST`<br>
 Description: Database URL
@@ -220,36 +242,36 @@ Description: Password of Database user
 Variable: `DB_NAME`<br>
 Description: Name of Database
 
-Variable: `ca_host`<br>
+Variable: `EJBCA_URL`<br>
 Description: EJBCA URL
 
-Variable: `clienteP12ArchiveFilepath`<br>
+Variable: `CLIENTP12_ARCHIVE_FILEPATH`<br>
 Description: Client P12 file to acess EJBCA
 
-Variable: `managementCA`<br>
+Variable: `MANAGEMENT_CA`<br>
 Description: EJBCA Management CA
 
-Variable: `clienteP12ArchivePassword`<br>
+Variable: `CLIENTP12_ARCHIVE_PASSWORD`<br>
 Description: Cliente P12 password to acess EJBCA
 
-Variable: `EJBCA_username`<br>
+Variable: `EJBCA_USERNAME`<br>
 Description: Username of EJBCA user
 
-Variable: `EJBCA_password`<br>
+Variable: `EJBCA_PASSWORD`<br>
 Description: Password of EJBCA user
 
-Variable: `certificateProfileName`<br>
+Variable: `CERTIFICATE_PROFILE_NAME`<br>
 Description: Name of the profile defined in the EJBCA application
 
-Variable: `endEntityProfileName`<br>
+Variable: `END_ENTITY_PROFILE_NAME`<br>
 Description: Name of the End Entity Profile defined in the EJBCA application
 
 
-# User Interface (HTTP Requests)
+# Workflow and Endpoints
 
 This project also provides a simple HTTP-based interface, allowing the service to be accessed through direct HTTP requests instead of a graphical user interface.
 
-To simplify interaction with the available endpoints, the project includes Swagger API documentation, which can be accessed through the following route:
+To simplify interaction with the available endpoints, the project includes [Swagger API](https://registry.serviceproviders.eudiw.dev/apidocs) documentation, which can be accessed through the following route:
 
 ```code
 /apidocs
@@ -264,232 +286,7 @@ The Swagger interface provides detailed information about all available endpoint
 
 This allows developers and users to easily explore and test the API.
 
-Additionally, a usage guide is available at the following route:
-
-``` code
-/guide
-```
-
-This page contains explanations on how to correctly use the different endpoints, including recommended request formats and practical examples.
-
-# Authentication Flow
-
-The API uses an authentication flow based on OID4VP and PID verification.
-
-The authentication process works as follows:
-
-1. Start the authentication flow and obtain a QR Code and `presentation_id`
-2. Wait for PID authorization validation
-3. Retrieve the authenticated user's `hash_pid`
-4. Use the `hash_pid` in authenticated endpoints
-
----
-
-## Authentication Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/authentication` | Start authentication flow and generate QR Code |
-| GET | `/pid_authorization` | Validate PID authorization status |
-| GET / POST | `/getpidoid4vp` | Retrieve PID data and obtain `hash_pid` |
-
----
-
-## Authentication Flow Description
-
-### 1. `/authentication`
-
-Starts the authentication process.
-
-Returns:
-- QR Code for wallet authentication
-- `presentation_id`
-
-The QR Code must be scanned by the user's wallet application.
-
----
-
-### 2. `/pid_authorization`
-
-Checks whether the PID authorization was completed successfully.
-This endpoint waits for the authentication result and validates the received PID authorization.
-
----
-
-### 3. `/getpidoid4vp`
-
-Retrieves the PID data obtained through the OID4VP flow.
-
-Returns:
-- User PID information
-- Generated `hash_pid`
-
-The returned `hash_pid` must be used in authenticated API requests.
-
----
-
-## Example Authenticated Request
-
-```json
-{
-  "hash_pid": "abc123hash"
-}
-```
-
-# Endpoint Overview
----
-
-## Identifier Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/identifier/create` | Create identifiers |
-| POST | `/identifier/list` | Retrieve identifiers |
-
----
-
-## Law Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/law/create` | Create laws |
-| POST | `/law/list` | Retrieve laws |
-
----
-
-## Natural Person Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/natural_person/create` | Create natural persons |
-| POST | `/natural_person/list` | Retrieve natural persons |
-
----
-
-## Legal Person Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/legal_person/create` | Create legal persons |
-| POST | `/legal_person/list` | Retrieve legal persons |
-| POST | `/legal_person/update_law` | Associate laws with legal persons |
-| POST | `/legal_person/remove_law` | Remove laws from legal persons |
-
----
-
-## Legal Entity Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/legal_entity/create` | Create legal entities |
-| POST | `/legal_entity/list` | Retrieve legal entities |
-| POST | `/legal_entity/update_identifier` | Associate identifiers |
-| POST | `/legal_entity/remove_identifier` | Remove identifiers |
-
----
-
-## Policy Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/policy/create` | Create policies |
-| POST | `/policy/list` | Retrieve policies |
-
----
-
-## Provider Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/provider/create` | Create providers |
-| POST | `/provider/list` | Retrieve providers |
-| POST | `/provider/update_policy` | Associate policies with providers |
-| POST | `/provider/remove_policy` | Remove policies from providers |
-
----
-
-## Credential Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/credential/create` | Create credentials |
-| POST | `/credential/list` | Retrieve credentials |
-| POST | `/list_claim` | Retrieve claims |
-
----
-
-## Intended Use Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/intended_use/create` | Create intended uses |
-| POST | `/intended_use/list` | Retrieve intended uses |
-| POST | `/intended_use/update_credential` | Associate credentials |
-| POST | `/intended_use/update_policy` | Associate policies |
-| POST | `/intended_use/remove_credential` | Remove credentials |
-| POST | `/intended_use/remove_policy` | Remove policies |
-
----
-
-## Provided Attestation Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/provided_attestation/create` | Create provided attestations |
-| POST | `/provided_attestation/list` | Retrieve provided attestations |
-
----
-
-## Supervisory Authority Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/supervisory_authority/create` | Create supervisory authorities |
-| POST | `/supervisory_authority/list` | Retrieve supervisory authorities |
-
----
-
-## Wallet Relying Party Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/wallet_rp/create` | Create Wallet Relying Parties |
-| POST | `/wallet_rp/list` | Retrieve Wallet Relying Parties |
-| POST | `/wallet_rp/update_intended_use` | Associate intended uses |
-| POST | `/wallet_rp/update_provided_attestation` | Associate provided attestations |
-| POST | `/wallet_rp/update_uses_intermediary` | Associate intermediary WRPs |
-| POST | `/wallet_rp/remove_intended_use` | Remove intended uses |
-| POST | `/wallet_rp/remove_provided_attestation` | Remove provided attestations |
-| POST | `/wallet_rp/remove_uses_intermediary` | Remove intermediary WRPs |
-
----
-
-## Public Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/wrp` | Search Wallet Relying Parties |
-| GET | `/wrp/<identifier>` | Retrieve Wallet Relying Party by identifier |
-| GET | `/wrp/check-intended-use` | Validate intended use compatibility |
-
----
-
-## Utility Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/list_full_info` | Retrieve complete hierarchical user information |
-
-## Certificates
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/intended_use/certificate` | Generate Intended Use Registration Certificate |
-| POST | `/wallet_rp/certificate` | Generate Wallet Relying Party Access Certificate |
-
-
-
-
+For further information on the required workflow and general information about the endpoints, please refer to the [Workflow and Endpoint](workflow_and_endpoints.md) guide.
 
 ## How to contribute
 
