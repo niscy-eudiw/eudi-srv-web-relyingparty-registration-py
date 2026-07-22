@@ -73,6 +73,53 @@ WRP->>+U: Return hash_pid
 
 ## Workflow
 
+```mermaid
+sequenceDiagram
+title WorkFlow - Legal Person Example
+
+actor U as UserAgent
+participant WRP as Registrar Aplication
+participant EJBCA as EJBCA
+participant WRPRC as WRPRC Issuer
+
+U->>+WRP: Create law (POST /law/create)
+WRP->>+U: Return law id
+U->>+WRP: Create legal person (POST /legal_person/create)
+WRP->>+U: Return person id
+U->>+WRP: Create identifier (POST /identifier/create)
+WRP->>+U: Return identifier id
+U->>+WRP: Create legal entity (POST /legal_entity/create)
+WRP->>+U: Return legal identity id
+U->>+WRP: Create policy (POST /policy/create)
+WRP->>+U: Return policy id
+U->>+WRP: Create provider (POST /provider/create)
+WRP->>+U: Return provider id
+U->>+WRP: Create credential (POST /credential/create)
+WRP->>+U: Return credential id
+U->>+WRP: Create intended_use (POST /intended_use/create)
+WRP->>+U: Return intended_use id
+U->>+WRP: Create provided_attestation (POST /provided_attestation/create)
+WRP->>+U: Return provided_attestation id
+U->>+WRP: Create supervisory_authority (POST /supervisory_authority/create)
+WRP->>+U: Return supervisory_authority id
+U->>+WRP: Create provided_attestation (POST /provided_attestation/create)
+WRP->>+U: Return provided_attestation id
+U->>+WRP: Create wallet_rp (POST /wallet_rp/create)
+WRP->>+U: Return wallet_rp id
+U->>+WRP: Create wallet_rp (POST /wallet_rp/certificate)
+WRP->>+WRP: Generate certificate request
+WRP->>+EJBCA: Enroll certificate with certificate request (POST /certificate/pkcs10enroll)
+EJBCA->>+WRP: Return access certificate
+WRP->>+WRP: Generate .p12 file 
+WRP->>+U: Return .p12 file
+U->>+WRP: Create wallet_rp (POST /intended_use/certificate)
+WRP->>+WRPRC: Send data needed for WRPRC 
+WRPRC->>+WRPRC: Generate certificate
+WRPRC->>+WRP: Return certificate in JWT and CBOR format
+WRP->>+U: Return registration certificate
+
+```
+
 ### `GET` /authentication
 
 Starts the authentication flow and returns a QR Code together with a presentation ID.
