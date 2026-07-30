@@ -74,13 +74,16 @@ WRP->>+U: Return hash_pid
 ## Workflow
 
 ```mermaid
+
 sequenceDiagram
 title WorkFlow - Legal Person Example
 
 actor U as UserAgent
 participant WRP as Registrar Aplication
 participant EJBCA as EJBCA
-participant WRPRC as WRPRC Issuer
+participant STATUS as Status List Service
+participant WRPRC as RegCertIssuer
+
 
 U->>+WRP: Create law (POST /law/create)
 WRP->>+U: Return law id
@@ -113,6 +116,8 @@ EJBCA->>+WRP: Return access certificate
 WRP->>+WRP: Generate .p12 file 
 WRP->>+U: Return .p12 file
 U->>+WRP: Create wallet_rp (POST /intended_use/certificate)
+WRP->>+STATUS: Generates a new entry in the attestation status list (POST /token_status_list/take)
+STATUS->>+WRP: Return status idx and uri claims
 WRP->>+WRPRC: Send data needed for WRPRC 
 WRPRC->>+WRPRC: Generate certificate
 WRPRC->>+WRP: Return certificate in JWT and CBOR format
