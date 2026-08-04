@@ -2757,15 +2757,19 @@ def intended_use_registration_certificate():
         })
 
     payload=json.dumps(json_payload)
-    print(payload)
 
     headers={
         'Content-Type': 'application/json'
     }
-    obtain_signed_document=requests.post(url=cfgserv.RegCertIssuer_url +"/signatures/WRPRC", headers=headers,data=payload)
-    
-    document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
 
+    try:
+        obtain_signed_document=requests.post(url=cfgserv.RegCertIssuer_url +"/signatures/WRPRC", headers=headers,data=payload)
+        
+        document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
+    except:
+        logger.error(f"Error in /signatures/WRPRC request: {obtain_signed_document.json()}")
+        return error_invalid("Error in /signatures/WRPRC request. ")
+                             
     data=json.loads(base64.b64decode(document_with_signature).decode("utf-8"))
 
     jwt_payload=data["payload"]
