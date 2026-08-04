@@ -166,9 +166,10 @@ Retrieves PID information and returns the user `hash_pid`.
 ## Examples
 
 ### `POST` /law/create
-
+Required dependencies:
 + hash_pid
 + law
+  + legislativeIdentifier
 
 ```json
 {
@@ -187,6 +188,11 @@ Retrieves PID information and returns the user `hash_pid`.
 
 ### `POST` /legal_person/create
 
+Required dependencies:
+  + hash_pid
+  + legalPerson
+    + legalName
+
 ```json
 {
   "hash_pid": "abc123hash",
@@ -204,19 +210,32 @@ Retrieves PID information and returns the user `hash_pid`.
 
 ### `POST` /identifier/create
 
+Required dependencies:
+  + hash_pid
+  + identifier
+    + identifier
+    + type
+
 ```json
 {
   "hash_pid": "abc123hash",
   "identifier": [
     {
       "identifier": "PT123456789",
-      "type": "http://data.europa.eu/eudi/id/EORI-No"
+      "type": "http://data.europa.eu/eudi/id/EORI-No",
     }
   ]
 }
 ```
 
 ### `POST` /legal_entity/create
+
+Required dependencies:
+  + hash_pid
+  + legal_entity
+    + identifiers
+    + country
+    + legal_person_id / natural_person_id
 
 ```json
 {
@@ -247,6 +266,13 @@ Retrieves PID information and returns the user `hash_pid`.
 
 ### `POST` /policy/create *(intention: wrp)*
 
+Required dependencies:
+  + hash_pid
+  + policy
+    + intention
+    + policyURI
+    + type
+
 ```json
 {
   "hash_pid": "{{hash_pid}}",
@@ -261,6 +287,13 @@ Retrieves PID information and returns the user `hash_pid`.
 ```
 
 ### `POST` /provider/create
+
+Required dependencies:
+  + hash_pid
+  + provider
+    + legalEntityId
+    + policy_id
+    + providerType
 
 ```json
 {
@@ -283,24 +316,48 @@ Retrieves PID information and returns the user `hash_pid`.
 
 ### `POST` /credential/create
 
+Required dependencies:
+  + hash_pid
+  + credentials
+    + format
+    + meta
+      + "values"
+    + claims
+      + path
+    
+
 ```json
 {
-  "credentials": [
-    {
-      "claims": [
+    "hash_pid": "abc123hash",
+    "credentials": [
         {
-          "path": "credentialSubject.name"
+            "format": "sd-jwt",
+            "meta": {
+                "vct_values": [
+                    "urn:eudi:pid:1",
+                    "urn:eu.europa.ec.eudi:learning:credential:1"
+                ]
+            },
+            "claims": [
+                { 
+                    "path": [
+                        "pid"
+                    ]
+                }
+            ]
         }
-      ],
-      "format": "jwt_vc",
-      "meta": "PID Credential"
-    }
-  ],
-  "hash_pid": "abc123hash"
+    ]
 }
 ```
 
 ### `POST` /policy/create *(intention: intended_use)*
+
+Required dependencies:
+  + hash_pid
+  + policy
+    + intention
+    + policyURI
+    + type
 
 ```json
 {
@@ -316,6 +373,18 @@ Retrieves PID information and returns the user `hash_pid`.
 ```
 
 ### `POST` /intended_use/create
+
+Required dependencies:
+  + hash_pid
+  + intended_uses
+    + purpose
+      + content
+      + lang
+    + privacyPolicy_id
+    + intendedUseIdentifier 
+    + createdAt
+    + revokedAt
+    + credential_ids
 
 ```json
 {
@@ -344,19 +413,38 @@ Retrieves PID information and returns the user `hash_pid`.
 
 ### `POST` /provided_attestation/create
 
+Required dependencies:
+  + hash_pid
+  + providesAttestations
+    + format
+    + meta
+      + "values"
+
 ```json
 {
   "hash_pid": "abc123hash",
   "providesAttestations": [
     {
-      "format": "jwt",
-      "meta": "issuer metadata info"
+      "format": "dc+sd-jwt",
+      "meta": {
+        "vct_values": [
+          "urn:eudi:pid:1",
+          "urn:eu.europa.ec.eudi:learning:credential:1"
+        ]
+      }
     }
   ]
 }
 ```
 
 ### `POST` /supervisory_authority/create
+
+Required dependencies:
+  + hash_pid
+  + supervisoryAuthority
+    + country
+    + email / formURI / phone
+    + name
 
 ```json
 {
@@ -381,12 +469,24 @@ Retrieves PID information and returns the user `hash_pid`.
 
 ### `POST` /wallet_rp/create
 
+Required dependencies:
+  + hash_pid
+  + WalletRelyingParty
+    + supportURI
+    + srvDescription
+      + content
+      + lang
+    + intendedUse_ids
+    + entitlements
+    + supervisoryAuthority
+    + registryURI
+
 ```json
 {
   "WalletRelyingParty": [
     {
       "entitlements": [
-        "AGE_VERIFICATION"
+        "https://uri.etsi.org/19475/Entitlement/Service_Provider"
       ],
       "intendedUse_ids": [
         1
@@ -666,3 +766,415 @@ The returned `hash_pid` must be used in authenticated API requests.
 |---|---|---|
 | POST | `/intended_use/certificate` | Generate Intended Use Registration Certificate |
 | POST | `/wallet_rp/certificate` | Generate Wallet Relying Party Access Certificate |
+
+---
+## API Documentation
+
+All available endpoints, request parameters, request body schemas, response formats, and example requests can be consulted through the Swagger API documentation.
+
+The Swagger interface provides an interactive environment where users can explore and test every available endpoint.
+
+| Environment | URL                                                    |
+| ----------- | ------------------------------------------------------ |
+| Local       | `http://localhost:5000/apidocs/`                       |
+| Online      | `https://registry.serviceproviders.eudiw.dev/apidocs/` |
+
+The Swagger documentation should be considered the primary reference for the API specification, as it is kept up to date with the latest endpoint definitions and supported request/response formats.
+
+--- 
+## End-to-End Example
+The following example demonstrates a complete registration workflow using the REST API.
+
+The commands below illustrate the typical sequence of requests required to:
+
+* authenticate the user and obtain a hash_pid.
+* register all required resources.
+* generate a Registration Certificate.
+* generate an Access Certificate.
+
+The example uses curl commands and sample values that comply with the referenced technical specifications. Replace identifiers returned by each step (e.g. law_id, provider_id, wrp_id) with the values obtained from your own deployment.
+
+| Step | Endpoint                 | Purpose                           |
+| ---- | ------------------------ | --------------------------------- |
+| 1    | Authentication           | Obtain `hash_pid`                 |
+| 2    | Law                      | Register legal basis              |
+| 3    | Legal Person             | Create legal person               |
+| 4    | Identifier               | Create organization identifier    |
+| 5    | Legal Entity             | Create legal entity               |
+| 6    | Policy                   | Create policy                     |
+| 7    | Provider                 | Create provider                   |
+| 8    | Credential               | Create credential                 |
+| 9    | Intended Use             | Create intended use               |
+| 10   | Provided Attestation     | Register attestation              |
+| 11   | Supervisory Authority    | Register supervisory authority    |
+| 12   | Wallet RP                | Create Wallet RP                  |
+| 13   | Registration Certificate | Generate registration certificate |
+| 14   | Access Certificate       | Generate access certificate       |
+
+### Step 1 - Create Law
+#### POST /law/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/law/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "law": [
+        {
+            "legislativeIdentifier": "LAW123",
+            "legalBasis": ["basis1", "basis2"]
+        }
+    ]
+}'
+```
+
+### Step 2 - Create Legal Person
+#### POST /legal_person/create
+
+```code
+curl --location 'https://registry.serviceproviders.eudiw.dev/legal_person/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "legalPerson": [
+        {
+          "law": [
+            <law_id>
+          ],
+          "legalName": [
+            "Company A",
+            "Company B"
+          ]
+        }
+    ]
+}'
+```
+
+### Step 3 - Create Identifier
+#### POST /identifier/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/identifier/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "identifier": [
+        {
+            "identifier": "PT123456789",
+            "type": "http://data.europa.eu/eudi/id/EORI-No"
+        }
+    ]
+}'
+```
+
+### Step 4 - Create Legal Entity
+#### POST /legal_entity/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/legal_entity/create' \
+--data-raw '{
+    "hash_pid": "<hash_pid>",
+
+    "legal_entity": [
+        {
+            "postalAddress": [
+                "Rua A, Porto",
+                "Av B, Lisboa"
+            ],
+
+            "country": "FR",
+
+            "email": [
+                "contact@empresa.pt",
+                "support@empresa.pt"
+            ],
+
+            "phone": [
+                "+351912345678",
+                "+351212345678"
+            ],
+
+            "infoURI": [
+                "https://empresa.pt/info",
+                "https://empresa.pt/about"
+            ],
+
+            "identifiers": [<identifiers_ids>],
+
+            "legal_person_id": <legal_person_id>
+        }
+    ]
+}'
+```
+
+### Step 5 - Create Policy
+#### POST /policy/create (Wallet RP)
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/policy/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "policy": [
+        {  
+            "intention": "wrp",
+            "policyURI": "policy",
+            "type": "http://data.europa.eu/eudi/policy/trust-service-practice-statement"
+        }
+    ]
+}'
+```
+
+### Step 6 - Create Provider
+#### POST /provider/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/provider/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+
+    "provider": [
+        {
+            "legalEntityId": <legal_Entity_Id>,
+
+            "providerType": "EAA_PROVIDER",
+
+            "x5c": [
+                "cert1_base64",
+                "cert2_base64"
+            ],
+
+            "policy_id": [<policy_id>]
+        }
+    ]
+}'
+```
+
+### Step 7 - Create Credential
+#### POST /credential/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/credential/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "credentials": [
+        {
+            "format": "sd-jwt",
+            "meta": {
+                "vct_values": [
+                    "urn:eudi:pid:1",
+                    "urn:eu.europa.ec.eudi:learning:credential:1"
+                ]
+            },
+            "claims": [
+                { 
+                    "path": [
+                        "pid",
+                        "address",
+                        0,
+                        "street"
+                    ]
+                }
+            ]
+        }
+    ]
+}'
+```
+
+### Step 8 - Create Policy (Intended Use)
+#### POST /policy/create 
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/policy/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "policy": [
+        {
+            "intention": "intended_use",
+            "policyURI": "https://empresa.pt/terms",
+            "type": "http://data.europa.eu/eudi/policy/trust-service-practice-statement"
+        }
+    ]
+}'
+```
+
+### Step 9 - Create Intended Use
+#### POST /intended_use/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/intended_use/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "intended_uses": [
+        {
+            "intendedUseIdentifier": "iu_1",
+            "createdAt": "2026-04-17",
+            "revokedAt": "2026-04-17",
+
+            "purpose": [
+                {
+                    "lang": "en",
+                    "content": "Access banking services"
+                },
+                {
+                    "lang": "pt",
+                    "content": "Aceder a serviços bancários"
+                }
+            ],
+
+            "privacyPolicy_id": [<privacyPolicy_id>],
+            "credential_ids": [<credential_ids>]
+        }
+    ]
+}'
+```
+
+### Step 10 - Provided Attestation
+#### POST /provided_attestation/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/provided_attestation/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "providesAttestations": [
+        {
+        "format": "dc+sd-jwt",
+        "meta": {
+            "vct_values": [
+            "urn:eudi:pid:1",
+            "urn:eu.europa.ec.eudi:learning:credential:1"
+            ]
+        }
+        }
+    ]
+}'
+```
+
+### Step 11 - Create Supervisory Authority
+#### POST /supervisory_authority/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/supervisory_authority/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "hash_pid": "<hash_pid>",
+
+    "supervisoryAuthority": [
+        {
+            "name": "ACME Authority",
+            "country": "PT",
+            "email": [
+                "authority@acme.com"
+            ],
+            "phone": [
+                "+351912345678"
+            ],
+            "formURI": [
+                "https://acme.com/form"
+            ]
+        }
+    ]
+}'
+```
+
+### Step 12 - Create Wallet Relying Party
+#### POST /wallet_rp/create
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/wallet_rp/create' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+
+    "WalletRelyingParty": [
+        {
+            "tradeName": "PY Issuer Dev",
+
+            "supportURI": [
+                "https://acme.com/support",
+                "https://help.acme.com"
+            ],
+
+            "srvDescription": [
+                {
+                    "lang": "en",
+                    "content": "Provides authentication services for ACME users."
+                },
+                {
+                    "lang": "pt",
+                    "content": "Fornece serviços de autenticação para utilizadores ACME."
+                }
+            ],
+
+            "isPSB": false,
+
+            "entitlements": [
+                "asadsasd"
+            ],
+
+            "usesIntermediary": [],
+
+            "providesAttestations_id": [<provides_Attestations_id>],
+
+            "registryURI": "https://registry.acme.com",
+
+            "supervisoryAuthority": <supervisory_Authority>,
+
+            "provider_id": <provider_id>,
+
+            "intendedUse_ids": [<intended_Use_ids>]
+        }
+    ]
+}'
+```
+
+### Step 13 - Generate Registration Certificate
+#### POST /intended_use/certificate
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/wallet_rp/certificate' \
+--header 'Content-Type: application/json' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "wrp_id": 1,
+    "password": "<password>"
+}'
+```
+
+### Step 14 - Generate Access Certificate
+#### POST /wallet_rp/certificate
+
+``` code
+curl --location 'https://registry.serviceproviders.eudiw.dev/intended_use/certificate' \
+--data '{
+    "hash_pid": "<hash_pid>",
+    "intended_use_id": <intended_use_id>
+}'
+``` 
+
+## Swagger Documentation
+
+The complete API documentation, including all available endpoints, request parameters, request/response examples, and schemas, is available through Swagger UI.
+
+### Local instance
+
+When running the project locally, the Swagger documentation is available at:
+
+```
+http://localhost:5000/apidocs
+```
+
+*(Adjust the host and port if your local deployment uses different values.)*
+
+### Online instance
+
+The latest online Swagger documentation is available at:
+
+```
+https://registry.serviceproviders.eudiw.dev/apidocs
+```

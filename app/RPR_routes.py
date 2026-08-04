@@ -96,6 +96,7 @@ import user as get_hash_user_pid
 from app.data_management import oid4vp_requests,p12_temp, certificate_data_List
 
 from app import logger
+from flask import send_from_directory
 
 rpr = Blueprint("RPR", __name__, url_prefix="/")
 
@@ -172,6 +173,9 @@ def list_response(message, result, name, code=200):
         }
     }, code
 
+@rpr.route("/swagger/api.yaml")
+def swagger_yaml():
+    return send_from_directory("swagger", "api.yaml")
 
 @rpr.route('/', methods=['GET','POST'])
 def initial_page():
