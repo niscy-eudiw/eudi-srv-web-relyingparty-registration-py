@@ -23,7 +23,7 @@ import ast
 import base64
 import binascii
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
@@ -2459,7 +2459,8 @@ def intended_use_registration_certificate():
 # family_name=natural_person_data["family_name"]
 
 
-    iat= int(time.time())
+    now = datetime.now(timezone.utc)
+    iat = int(now.timestamp())
 
 # name=RP_data["tradeName"]
 # purpose=intended_use_data["purpose"]
@@ -2537,8 +2538,9 @@ def intended_use_registration_certificate():
     data={
         "country":"FC",
         "doctype":"wrprc",
-        "expiry_date":datetime.utcfromtimestamp(iat).strftime("%Y-%m-%d")
+        "expiry_date":(now + timedelta(days=6*30)).strftime("%Y-%m-%d")
     }
+    
 
     response = requests.post(cfgserv.url_statuslist, headers=headers, data=data)
 
@@ -2650,115 +2652,21 @@ def intended_use_registration_certificate():
                 "sname": rp_intermediary[0]["trade_name"]
             }
         })
-    
-    with open(cfgserv.wrprc_certificate, "rb") as f:
-        cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
-    base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-    
-    #Jades with b-b profile
-
-    # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
-
-    # with open("naoAssinado.json", "w", encoding="utf-8") as f:
-    #     json.dump(
-    #         json_payload,
-    #         f,
-    # )
-
-    file_bytes = json.dumps(json_payload).encode()
-    
-    # digest = hashes.Hash(hashes.SHA256())
-    # digest.update(file_bytes)
-    # hash_value = digest.finalize()
-
-    base64_payload=base64.b64encode(file_bytes).decode("utf-8")
-
-    #print(document)
-    payload=json.dumps({
-
-            "documents":[{
-
-                "document": base64_payload,
-                "signature_format": "J",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-
-            } ],
-        "endEntityCertificate": base64_cert,
-        "certificateChain": [
-        ],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
-
-    })
+    payload=json.dumps(json_payload)
 
     headers={
         'Content-Type': 'application/json'
     }
 
-    calculate_hash=requests.post(url=cfgserv.sca_signer_url+"/signatures/calculate_hash",headers=headers, data=payload)
-
-    #print(calculate_hash.json())
-    #print(calculate_hash.json()["hashes"])
-
-    hashes1 = calculate_hash.json()["hashes"]
-
-    #print(hashes1[0])
-
-    base64_string = urllib.parse.unquote(hashes1[0])
-
-    data_to_be_signed = base64.b64decode(base64_string)
-
-    #print(data_to_be_signed)
-
-    #print(data_to_be_signed)
-    # hash = base64.urlsafe_b64decode(hashes[0]).
-    # base64.b64decode
-
-    signature_date = calculate_hash.json()["signature_date"]
-
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        private_key = serialization.load_pem_private_key(
-        f.read(),
-        password=None,
-        backend=default_backend()
-    )
-
-    # key=ECC.import_key(private_key)
-
-    # signature = DSS.new(key).sign(data_to_be_signed)
-    signature = private_key.sign(
-        data_to_be_signed,
-        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
-    )
-
-    base64_signature= base64.b64encode(signature).decode()
-    #print(base64_signature)
-
-    payload = json.dumps({
-        "documents": [
-            {
-                "document": base64_payload,
-                "signature_format": "J",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-            }
-        ],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
-        "returnValidationInfo": False,
-        "endEntityCertificate": base64_cert,
-        "certificateChain": [
-        ],
-        "signatures":[base64_signature],
-        "date": signature_date
-    }).encode()
-
-    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
-    
-    document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
-
+    try:
+        obtain_signed_document=requests.post(url=cfgserv.RegCertIssuer_url +"/signatures/WRPRC", headers=headers,data=payload)
+        
+        document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
+    except:
+        logger.error(f"Error in /signatures/WRPRC request: {obtain_signed_document.json()}")
+        return error_invalid("Error in /signatures/WRPRC request. ")
+                             
     data=json.loads(base64.b64decode(document_with_signature).decode("utf-8"))
 
     jwt_payload=data["payload"]
@@ -2767,23 +2675,9 @@ def intended_use_registration_certificate():
 
     jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
 
-    #cbor
-
-    cbor_data= cbor2.dumps(json_payload)
-
-    msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
-
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        pem_bytes = f.read()
-
-    cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
-    msg.key = cose_key
-    cose_bytes = msg.encode()
-
-    #file_data = base64.b64decode(document_with_signature)
 
     file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
-    cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
+    cose_base64 = obtain_signed_document.json()["documentWithSignature"][1]
 
     return jsonify({
         "status": "success",

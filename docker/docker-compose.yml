@@ -32,7 +32,7 @@ services:
       LOG_PATH: 'app\logs'
       VERIFIER: 'verifier-backend.eudiw.dev'
 
-      SCA_SIGNER_URL: ''
+      REGCERTISSUER_URL: ''
       URL_STATUSLIST: ''
       WRPRC_PRIVATEkEY: 'app/EJBCA/ecdsa_key.pem'
       WRPRC_CERTIFICATE: 'app/EJBCA/ecdsa_cert.pem'

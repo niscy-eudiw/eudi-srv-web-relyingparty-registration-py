@@ -105,7 +105,7 @@ class ConfService:
                         "http://data.europa.eu/eudi/policy/registration-policy"]
     }
 
-    sca_signer_url= os.getenv("SCA_SIGNER_URL", "http://localhost:8086")
+    RegCertIssuer_url= os.getenv("REGCERTISSUER_URL", "http://localhost:8086")
 
     url_statuslist= os.getenv("URL_STATUSLIST", "https://dev.issuer.eudiw.dev/token_status_list/take")
 
