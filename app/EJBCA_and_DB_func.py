@@ -139,7 +139,7 @@ def getTrustManagerOfCACertificate(ManagementCA):
 
     return certificate
 
-def http_post_requests_with_custom_ssl_context(trust_manager, key_manager_filepath, key_manager_password, url, json_body, headers):
+def http_post_requests_with_custom_ssl_context( key_manager_filepath, key_manager_password, url, json_body, headers):
 
     # ssl_context = ssl.SSLContext()
     # ssl_context.load_verify_locations(trust_manager)
@@ -153,6 +153,26 @@ def http_post_requests_with_custom_ssl_context(trust_manager, key_manager_filepa
 
     # Perform the POST request
     response = session.post(url, json=json_body, headers=headers, verify=False)
+
+    return response
+
+def revoke_access_certificate( key_manager_filepath, key_manager_password, issuer_dn, serial_number, headers):
+
+    # ssl_context = ssl.SSLContext()
+    # ssl_context.load_verify_locations(trust_manager)
+    # ssl_context.verify_mode=ssl.CERT_REQUIRED
+
+    # http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ssl_context=ssl_context)
+
+    Url= "https://" + ejbca.cahost + "/ejbca/ejbca-rest-api/v1/certificate/" + issuer_dn + "/" + serial_number + "/revoke?reason=CESSATION_OF_OPERATION"
+    
+
+    # # Set up the requests session
+    session = requests.Session()
+    session.mount('https://', Pkcs12Adapter(pkcs12_filename=key_manager_filepath, pkcs12_password=key_manager_password))
+
+    # Perform the PUT request
+    response = session.put(Url, headers=headers, verify=False)
 
     return response
 

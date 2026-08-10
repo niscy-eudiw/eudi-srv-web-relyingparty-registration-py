@@ -107,7 +107,8 @@ class ConfService:
 
     RegCertIssuer_url= os.getenv("REGCERTISSUER_URL", "http://localhost:8086")
 
-    url_statuslist= os.getenv("URL_STATUSLIST", "https://dev.issuer.eudiw.dev/token_status_list/take")
+    url_statuslist= os.getenv("URL_STATUSLIST", "https://dev.issuer.eudiw.dev/token_status_list/")
+
 
     wrprc_privateKey = os.getenv("WRPRC_PRIVATEkEY", "app/EJBCA/ecdsa_key.pem")
 

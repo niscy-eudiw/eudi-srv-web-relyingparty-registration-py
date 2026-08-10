@@ -428,8 +428,8 @@ CREATE TABLE IF NOT EXISTS `wrp_support_uri` (
 CREATE TABLE IF NOT EXISTS `access_certificate` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `pkcs12_certificate` longtext NOT NULL,
-  `serial_number` varchar(255) NOT NULL,
-  `subject` text NOT NULL,
+  `serial_number` longtext NOT NULL,
+  `issuer_dn` text NOT NULL,
   `state` varchar(20) NOT NULL DEFAULT 'ACTIVE',
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `expires_at` datetime NOT NULL,
@@ -450,6 +450,8 @@ CREATE TABLE IF NOT EXISTS `registration_certificate` (
   `jwt_certificate` longtext NOT NULL,
   `cbor_certificate` longtext NOT NULL,
   `state` varchar(20) NOT NULL DEFAULT 'ACTIVE',
+  `idx` int(11) NOT NULL,
+  `uri` longtext NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `expires_at` datetime NOT NULL,
   `intended_use_id` int(11) NOT NULL,
@@ -461,10 +463,3 @@ CREATE TABLE IF NOT EXISTS `registration_certificate` (
   CONSTRAINT `fk_registration_certificate_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Exportação de dados não seleccionada.
-
-/*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
-/*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
-/*!40014 SET FOREIGN_KEY_CHECKS=IFNULL(@OLD_FOREIGN_KEY_CHECKS, 1) */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40111 SET SQL_NOTES=IFNULL(@OLD_SQL_NOTES, 1) */;

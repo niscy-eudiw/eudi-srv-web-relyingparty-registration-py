@@ -82,7 +82,7 @@ from cryptography.x509 import GeneralName, GeneralNames
 from cryptography.x509 import SubjectAlternativeName
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.hazmat.primitives.serialization import pkcs12
-from app.EJBCA_and_DB_func import func_get_user_id_by_hash_pid, generateCertificateRequest, get_certificate_data, getCertificateAuthorityName, getJsonBody, getTrustManagerOfCACertificate, http_post_requests_with_custom_ssl_context, update_status, user_relying_party_db
+from app.EJBCA_and_DB_func import func_get_user_id_by_hash_pid, generateCertificateRequest, get_certificate_data, getCertificateAuthorityName, getJsonBody, getTrustManagerOfCACertificate, http_post_requests_with_custom_ssl_context, revoke_access_certificate, update_status, user_relying_party_db
 from requests_pkcs12 import Pkcs12Adapter
 import urllib.parse
 
@@ -2365,9 +2365,23 @@ def wrp_access_certificate():
     clientP12ArchivePassword = ejbca.clientP12ArchivePassword
     ManagementCA = ejbca.managementCA
 
+    old_cert= db.get_active_access_certificate_by_wrp(wrp_id)
+
+    if old_cert:
+
+        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[2],old_cert[3], headers)
+
+        response_revoke = response.json()
+        print(response_revoke)
+        if response_revoke["revoked"] != True:
+
+            return error_invalid("Error when revoking a previous access certificate")
+
+        db.update_access_certificate_state(old_cert[0]["id"])
+
     trustCA= getTrustManagerOfCACertificate(ManagementCA)
 
-    response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
+    response = http_post_requests_with_custom_ssl_context(clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
 
     response = response.json()
     
@@ -2375,42 +2389,21 @@ def wrp_access_certificate():
 
     certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
 
-    serial_number=response["serial_number"]
+    serial_number='0x' + format(certificate.serial_number, 'x')
 
     p12=pkcs12.serialize_key_and_certificates(
         name=tradeName.encode("utf-8"),key=priv_key,cert=certificate, cas=list().append(trustCA),
         encryption_algorithm=serialization.BestAvailableEncryption(password.encode("utf-8"))
     )
 
-    tag = uuid.uuid4()
-
-    file_name = tradeName + "_" + str(tag)
-
-    p12_temp.update({file_name:{"response": p12, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry)}})
-
-    cert = certificate.subject.rfc4514_string().split(",")
-    dic = {parte.split("=")[0]: parte for parte in cert}
-    order = [dic.get("C"),
-            #dic.get("O"),
-            dic.get("CN")]
-    aux = [v for k, v in dic.items() if k not in ["C", "O", "CN"]]
-
-    cert_subject_rfc4514_string = ",".join(order + aux)
-
-    certificate_presentation={
-        "certificate_issuer":certificate.issuer.rfc4514_string(),
-        "certificate_distinguished_name":cert_subject_rfc4514_string,
-        "validity_from":certificate.not_valid_before_utc,
-        "validity_to":certificate.not_valid_after_utc,
-    }
+    cert_issuer = certificate.issuer.rfc4514_string()
 
     file_base64 = base64.b64encode(p12).decode()
-    serial_number = response["serial_number"]
 
     db.insert_access_certificate(
         pkcs12_certificate=file_base64,
         serial_number=serial_number,
-        subject=cert_subject_rfc4514_string,
+        issuer_dn=cert_issuer,
         state="ACTIVE",
         created_at=datetime.now(),
         expires_at=certificate.not_valid_after_utc,
@@ -2541,11 +2534,32 @@ def intended_use_registration_certificate():
     #             "b64": "true", 
     #             "cty": ["b64"], "x5c": [],}
 
+
     headers={
         "accept": "application/json",
-        "X-API-Key": "test" ,
+        "X-API-Key": cfgserv.status_list_api_key ,
         "Content-Type": "application/x-www-form-urlencoded",
     }
+
+    old_cert= db.get_active_registration_certificate_by_intended_use(intended_use_id)
+    
+    if old_cert:
+
+        data={
+            "idx": old_cert[2],
+            "uri": old_cert[3],
+            "status": 1
+        }
+
+        response = requests.post(cfgserv.url_statuslist + "set", headers=headers, data=data)
+
+        response_revoke = response.text
+        print(response_revoke)
+        if response_revoke != "Status Changed\n":
+
+            return error_invalid("Error when revoking a previous access certificate")
+
+        db.update_registration_certificate_state(old_cert[0])
 
     data={
         "country":"FC",
@@ -2553,8 +2567,7 @@ def intended_use_registration_certificate():
         "expiry_date":(now + timedelta(days=6*30)).strftime("%Y-%m-%d")
     }
     
-
-    response = requests.post(cfgserv.url_statuslist, headers=headers, data=data)
+    response = requests.post(cfgserv.url_statuslist + "take", headers=headers, data=data)
 
     status=response.json()
     
@@ -2695,6 +2708,8 @@ def intended_use_registration_certificate():
         jwt_certificate=file_base64,
         cbor_certificate=cose_base64,
         state="ACTIVE",
+        idx=status_idx,
+        uri=status_uri,
         created_at=now,
         expires_at=(now + timedelta(days=6*30)),
         intended_use_id=intended_use_id,

@@ -3972,7 +3972,7 @@ def check_intended_use(
         return False
 
 ## -access_certificate-insert 
-def insert_access_certificate(pkcs12_certificate, serial_number, subject, state, created_at, expires_at, wrp_id, user_id):
+def insert_access_certificate(pkcs12_certificate, serial_number, issuer_dn, state, created_at, expires_at, wrp_id, user_id):
     try:
         connection = conn()
         if connection:
@@ -3980,14 +3980,14 @@ def insert_access_certificate(pkcs12_certificate, serial_number, subject, state,
 
             insert_query = "INSERT INTO access_certificate (pkcs12_certificate, " \
                                                             "serial_number, " \
-                                                            "subject, state, " \
+                                                            "issuer_dn, state, " \
                                                             "created_at, " \
                                                             "expires_at, " \
                                                             "wrp_id, " \
                                                             "user_id)" \
             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
             
-            cursor.execute(insert_query, (pkcs12_certificate, serial_number, subject, state, created_at, expires_at, wrp_id, user_id,))
+            cursor.execute(insert_query, (pkcs12_certificate, serial_number, issuer_dn, state, created_at, expires_at, wrp_id, user_id,))
             
             connection.commit()
             
@@ -4002,12 +4002,61 @@ def insert_access_certificate(pkcs12_certificate, serial_number, subject, state,
         if connection:
             cursor.close()
             connection.close()
+
+#get access certificates from wrp      
+def get_active_access_certificate_by_wrp(wrp_id):
+
+    try:
+        connection = conn()
+        cursor = connection.cursor()
+
+        query = """
+            SELECT id, state, serial_number, issuer_dn 
+            FROM access_certificate 
+
+            WHERE wrp_id = %s AND state = "ACTIVE"
+        """
+
+        cursor.execute(query, (wrp_id))
+        rows = cursor.fetchone()
+
+        if rows:
+            return rows
+        else:
+            return {}
+
+    except Exception as e:
+        logger.error(e)
+        return None
+    
+#update access certificate state     
+def update_access_certificate_state(id):
+    try:
+        connection = conn()
+        cursor = connection.cursor()
+
+        query = """
+            UPDATE access_certificate 
+            SET state="REVOKED"
+            WHERE id = %s
+        """
+
+        cursor.execute(query, (id))
+
+        connection.commit()
+        return cursor.lastrowid
+
+    except Exception as e:
+        logger.error(e)
+        return None
             
 ## -registration_certificate-insert
 def insert_registration_certificate(
     jwt_certificate,
     cbor_certificate,
     state,
+    idx,
+    uri,
     created_at,
     expires_at,
     intended_use_id,
@@ -4023,12 +4072,14 @@ def insert_registration_certificate(
                     jwt_certificate,
                     cbor_certificate,
                     state,
+                    idx,
+                    uri,
                     created_at,
                     expires_at,
                     intended_use_id,
                     user_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
 
             cursor.execute(
@@ -4037,6 +4088,8 @@ def insert_registration_certificate(
                     jwt_certificate,
                     cbor_certificate,
                     state,
+                    idx,
+                    uri,
                     created_at,
                     expires_at,
                     intended_use_id,
@@ -4060,3 +4113,50 @@ def insert_registration_certificate(
         if connection:
             cursor.close()
             connection.close()
+
+#get registration certificates from intended_use     
+def get_active_registration_certificate_by_intended_use(intended_use_id):
+
+    try:
+        connection = conn()
+        cursor = connection.cursor()
+
+        query = """
+            SELECT id, state, idx, uri
+            FROM registration_certificate
+
+            WHERE intended_use_id = %s AND state = "ACTIVE"
+        """
+
+        cursor.execute(query, (intended_use_id))
+        rows = cursor.fetchone()
+
+        if rows:
+            return rows
+        else:
+            return {}
+
+    except Exception as e:
+        logger.error(e)
+        return None
+    
+#update access certificate state     
+def update_registration_certificate_state(id):
+    try:
+        connection = conn()
+        cursor = connection.cursor()
+
+        query = """
+            UPDATE registration_certificate
+            SET state="REVOKED"
+            WHERE id = %s
+        """
+
+        cursor.execute(query, (id))
+
+        connection.commit()
+        return cursor.lastrowid
+
+    except Exception as e:
+        logger.error(e)
+        return None
