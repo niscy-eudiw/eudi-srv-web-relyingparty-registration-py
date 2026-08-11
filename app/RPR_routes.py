@@ -2368,16 +2368,16 @@ def wrp_access_certificate():
     old_cert= db.get_active_access_certificate_by_wrp(wrp_id)
 
     if old_cert:
-
-        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[2],old_cert[3], headers)
+        
+        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[3],old_cert[2], headers)
 
         response_revoke = response.json()
-        print(response_revoke)
-        if response_revoke["revoked"] != True:
 
-            return error_invalid("Error when revoking a previous access certificate")
+        if "revoked" not in response_revoke:
 
-        db.update_access_certificate_state(old_cert[0]["id"])
+            return error_invalid("Error when revoking a previous access certificate:" + response_revoke["error_message"])
+
+        db.update_access_certificate_state(old_cert[0])
 
     trustCA= getTrustManagerOfCACertificate(ManagementCA)
 
@@ -2389,7 +2389,7 @@ def wrp_access_certificate():
 
     certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
 
-    serial_number='0x' + format(certificate.serial_number, 'x')
+    serial_number=format(certificate.serial_number, 'x')
 
     p12=pkcs12.serialize_key_and_certificates(
         name=tradeName.encode("utf-8"),key=priv_key,cert=certificate, cas=list().append(trustCA),
@@ -2554,10 +2554,10 @@ def intended_use_registration_certificate():
         response = requests.post(cfgserv.url_statuslist + "set", headers=headers, data=data)
 
         response_revoke = response.text
-        print(response_revoke)
+
         if response_revoke != "Status Changed\n":
 
-            return error_invalid("Error when revoking a previous access certificate")
+            return error_invalid("Error when revoking a previous registration certificate")
 
         db.update_registration_certificate_state(old_cert[0])
 
@@ -2735,3 +2735,107 @@ def intended_use_registration_certificate():
 
     cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
     return cose_base64
+
+#admin
+#@rpr.route("/revoke_access_certificate", methods=["POST"])
+def revoke_access_certificate():
+
+    data = request.get_json(silent=True)
+            
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["wrp_id"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    wrp_id = data.get("wrp_id")
+
+    headers ={
+        "Content-Type": "application/json",
+        'Authorization': 'Bearer test',
+    }
+
+    clientP12ArchiveFilepath = ejbca.clientP12ArchiveFilepath
+    clientP12ArchivePassword = ejbca.clientP12ArchivePassword
+
+    old_cert= db.get_active_access_certificate_by_wrp(wrp_id)
+
+    if old_cert:
+
+        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[3],old_cert[2], headers)
+
+        response_revoke = response.json()
+
+        if "revoked" not in response_revoke:
+
+            return error_invalid("Error when revoking a previous access certificate:" + response_revoke["error_message"])
+
+        db.update_access_certificate_state(old_cert[0])
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "Access certificate revoked sucessfully",
+        }
+    
+    elif not old_cert:
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "No Active Access certificates for this Wallet Relying Party ",
+        }
+
+#@rpr.route("/revoke_registration_certificate", methods=["POST"])
+def revoke_registration_certificate():
+
+    data = request.get_json(silent=True)
+            
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["intended_use_id"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    intended_use_id = data.get("intended_use_id")
+
+    old_cert= db.get_active_registration_certificate_by_intended_use(intended_use_id)
+
+    headers={
+        "accept": "application/json",
+        "X-API-Key": cfgserv.status_list_api_key ,
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    if old_cert:
+
+        data={
+            "idx": old_cert[2],
+            "uri": old_cert[3],
+            "status": 1
+        }
+
+        response = requests.post(cfgserv.url_statuslist + "set", headers=headers, data=data)
+
+        response_revoke = response.text
+        if response_revoke != "Status Changed\n":
+
+            return error_invalid("Error when revoking a previous registration certificate")
+
+        db.update_registration_certificate_state(old_cert[0])
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "Registration certificate revoked sucessfully",
+        }
+
+    elif not old_cert:
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "No Active Registration certificates for this Intended use ",
+        }

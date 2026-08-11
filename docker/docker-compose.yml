@@ -34,6 +34,8 @@ services:
 
       REGCERTISSUER_URL: ''
       URL_STATUSLIST: ''
+      STATUS_LIST_API_KEY: ''
+      
       WRPRC_PRIVATEkEY: 'app/EJBCA/ecdsa_key.pem'
       WRPRC_CERTIFICATE: 'app/EJBCA/ecdsa_cert.pem'
 
