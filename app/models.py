@@ -4029,6 +4029,32 @@ def get_active_access_certificate_by_wrp(wrp_id):
         logger.error(e)
         return None
     
+#get access certificates from wrp      
+def get_canceled_access_certificate_by_wrp(wrp_id):
+
+    try:
+        connection = conn()
+        cursor = connection.cursor()
+
+        query = """
+            SELECT id, state, serial_number, issuer_dn 
+            FROM access_certificate 
+
+            WHERE wrp_id = %s AND state = "CANCELED"
+        """
+
+        cursor.execute(query, (wrp_id))
+        rows = cursor.fetchone()
+
+        if rows:
+            return rows
+        else:
+            return {}
+
+    except Exception as e:
+        logger.error(e)
+        return None
+    
 #update access certificate state     
 def update_access_certificate_state(id):
     try:
@@ -4139,20 +4165,45 @@ def get_active_registration_certificate_by_intended_use(intended_use_id):
     except Exception as e:
         logger.error(e)
         return None
+
+def get_canceled_registration_certificate_by_intended_use(intended_use_id):
+
+    try:
+        connection = conn()
+        cursor = connection.cursor()
+
+        query = """
+            SELECT id, state, idx, uri
+            FROM registration_certificate
+
+            WHERE intended_use_id = %s AND state = "CANCELED"
+        """
+
+        cursor.execute(query, (intended_use_id))
+        rows = cursor.fetchone()
+
+        if rows:
+            return rows
+        else:
+            return {}
+
+    except Exception as e:
+        logger.error(e)
+        return None
     
 #update access certificate state     
-def update_registration_certificate_state(id):
+def update_registration_certificate_state(id, state):
     try:
         connection = conn()
         cursor = connection.cursor()
 
         query = """
             UPDATE registration_certificate
-            SET state="REVOKED"
+            SET state= %s
             WHERE id = %s
         """
 
-        cursor.execute(query, (id))
+        cursor.execute(query, (state, id))
 
         connection.commit()
         return cursor.lastrowid

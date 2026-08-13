@@ -2368,7 +2368,7 @@ def wrp_access_certificate():
     old_cert= db.get_active_access_certificate_by_wrp(wrp_id)
 
     if old_cert:
-        
+
         response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[3],old_cert[2], headers)
 
         response_revoke = response.json()
@@ -2554,7 +2554,6 @@ def intended_use_registration_certificate():
         response = requests.post(cfgserv.url_statuslist + "set", headers=headers, data=data)
 
         response_revoke = response.text
-
         if response_revoke != "Status Changed\n":
 
             return error_invalid("Error when revoking a previous registration certificate")
@@ -2763,7 +2762,7 @@ def revoke_access_certificate():
 
     if old_cert:
 
-        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[3],old_cert[2], headers)
+        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[3],old_cert[2], headers, reason= "CESSATION_OF_OPERATION")
 
         response_revoke = response.json()
 
@@ -2776,7 +2775,7 @@ def revoke_access_certificate():
         return {
             "status": "success",
             "code": 200,
-            "message": "Access certificate revoked sucessfully",
+            "message": "Access certificate revoked successfully",
         }
     
     elif not old_cert:
@@ -2785,6 +2784,106 @@ def revoke_access_certificate():
             "status": "success",
             "code": 200,
             "message": "No Active Access certificates for this Wallet Relying Party ",
+        }
+    
+#@rpr.route("/cancel_access_certificate", methods=["POST"])
+def cancel_access_certificate():
+
+    data = request.get_json(silent=True)
+            
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["wrp_id"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    wrp_id = data.get("wrp_id")
+
+    headers ={
+        "Content-Type": "application/json",
+        'Authorization': 'Bearer test',
+    }
+
+    clientP12ArchiveFilepath = ejbca.clientP12ArchiveFilepath
+    clientP12ArchivePassword = ejbca.clientP12ArchivePassword
+
+    old_cert= db.get_active_access_certificate_by_wrp(wrp_id)
+
+    if old_cert:
+
+        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[3],old_cert[2], headers, reason="CERTIFICATE_HOLD")
+
+        response_revoke = response.json()
+
+        if "revoked" not in response_revoke:
+
+            return error_invalid("Error when revoking a previous access certificate:" + response_revoke["error_message"])
+
+        db.update_access_certificate_state(old_cert[0])
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "Access certificate canceled successfully",
+        }
+    
+    elif not old_cert:
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "No Active Access certificates for this Wallet Relying Party ",
+        }
+
+#@rpr.route("/reactivate_access_certificate", methods=["POST"])
+def reactivate_access_certificate():
+
+    data = request.get_json(silent=True)
+            
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["wrp_id"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    wrp_id = data.get("wrp_id")
+
+    headers ={
+        "Content-Type": "application/json",
+        'Authorization': 'Bearer test',
+    }
+
+    clientP12ArchiveFilepath = ejbca.clientP12ArchiveFilepath
+    clientP12ArchivePassword = ejbca.clientP12ArchivePassword
+
+    old_cert= db.get_canceled_access_certificate_by_wrp(wrp_id)
+
+    if old_cert:
+
+        response = revoke_access_certificate(clientP12ArchiveFilepath, clientP12ArchivePassword, old_cert[3],old_cert[2], headers, reason="REMOVE_FROM_CRL")
+
+        response_revoke = response.json()
+
+        if "revoked" not in response_revoke:
+
+            return error_invalid("Error when revoking a previous access certificate:" + response_revoke["error_message"])
+
+        db.update_access_certificate_state(old_cert[0])
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "Access certificate reactivated successfully",
+        }
+    
+    elif not old_cert:
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "No Canceled Access certificates for this Wallet Relying Party ",
         }
 
 #@rpr.route("/revoke_registration_certificate", methods=["POST"])
@@ -2824,12 +2923,118 @@ def revoke_registration_certificate():
 
             return error_invalid("Error when revoking a previous registration certificate")
 
-        db.update_registration_certificate_state(old_cert[0])
+        db.update_registration_certificate_state(old_cert[0], "Revoked")
 
         return {
             "status": "success",
             "code": 200,
-            "message": "Registration certificate revoked sucessfully",
+            "message": "Registration certificate revoked successfully",
+        }
+
+    elif not old_cert:
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "No Active Registration certificates for this Intended use ",
+        }
+
+#@rpr.route("/cancel_registration_certificate", methods=["POST"])
+def cancel_registration_certificate():
+
+    data = request.get_json(silent=True)
+            
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["intended_use_id"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    intended_use_id = data.get("intended_use_id")
+
+    old_cert= db.get_active_registration_certificate_by_intended_use(intended_use_id)
+
+    headers={
+        "accept": "application/json",
+        "X-API-Key": cfgserv.status_list_api_key ,
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    if old_cert:
+
+        data={
+            "idx": old_cert[2],
+            "uri": old_cert[3],
+            "status": 2
+        }
+
+        response = requests.post(cfgserv.url_statuslist + "set", headers=headers, data=data)
+
+        response_revoke = response.text
+        if response_revoke != "Status Changed\n":
+
+            return error_invalid("Error when revoking a previous registration certificate")
+
+        db.update_registration_certificate_state(old_cert[0], "CANCELED")
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "Registration certificate canceled successfully",
+        }
+
+    elif not old_cert:
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "No Canceled Registration certificates for this Intended use ",
+        }
+
+#@rpr.route("/reactivate_registration_certificate", methods=["POST"])
+def reactivate_registration_certificate():
+
+    data = request.get_json(silent=True)
+            
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["intended_use_id"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    intended_use_id = data.get("intended_use_id")
+
+    old_cert= db.get_active_registration_certificate_by_intended_use(intended_use_id)
+
+    headers={
+        "accept": "application/json",
+        "X-API-Key": cfgserv.status_list_api_key ,
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    if old_cert:
+
+        data={
+            "idx": old_cert[2],
+            "uri": old_cert[3],
+            "status": 0
+        }
+
+        response = requests.post(cfgserv.url_statuslist + "set", headers=headers, data=data)
+
+        response_revoke = response.text
+        if response_revoke != "Status Changed\n":
+
+            return error_invalid("Error when revoking a previous registration certificate")
+
+        db.update_registration_certificate_state(old_cert[0], "ACTIVE")
+
+        return {
+            "status": "success",
+            "code": 200,
+            "message": "Registration certificate canceled successfully",
         }
 
     elif not old_cert:

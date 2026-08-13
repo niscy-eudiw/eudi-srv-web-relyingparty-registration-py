@@ -109,7 +109,7 @@ class ConfService:
 
     url_statuslist= os.getenv("URL_STATUSLIST", "https://dev.issuer.eudiw.dev/token_status_list/")
 
-    status_list_api_key= os.getenv("STATUS_LIST_API_KEYSTATUS_LIST_API_KEY")
+    status_list_api_key= os.getenv("STATUS_LIST_API_KEY")
 
     wrprc_privateKey = os.getenv("WRPRC_PRIVATEkEY", "app/EJBCA/ecdsa_key.pem")
 

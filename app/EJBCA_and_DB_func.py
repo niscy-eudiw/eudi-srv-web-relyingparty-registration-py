@@ -156,7 +156,7 @@ def http_post_requests_with_custom_ssl_context( key_manager_filepath, key_manage
 
     return response
 
-def revoke_access_certificate( key_manager_filepath, key_manager_password, issuer_dn, serial_number, headers):
+def revoke_access_certificate( key_manager_filepath, key_manager_password, issuer_dn, serial_number, headers, reason):
 
     # ssl_context = ssl.SSLContext()
     # ssl_context.load_verify_locations(trust_manager)
@@ -164,7 +164,7 @@ def revoke_access_certificate( key_manager_filepath, key_manager_password, issue
 
     # http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED', ssl_context=ssl_context)
 
-    Url= "https://" + ejbca.cahost + "/ejbca/ejbca-rest-api/v1/certificate/" + issuer_dn + "/" + serial_number + "/revoke?reason=CESSATION_OF_OPERATION"
+    Url= "https://" + ejbca.cahost + "/ejbca/ejbca-rest-api/v1/certificate/" + issuer_dn + "/" + serial_number + "/revoke?reason=" + reason
     
 
     # # Set up the requests session
