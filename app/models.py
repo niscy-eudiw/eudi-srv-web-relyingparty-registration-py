@@ -4004,7 +4004,7 @@ def insert_access_certificate(pkcs12_certificate, serial_number, issuer_dn, stat
             connection.close()
 
 #get access certificates from wrp      
-def get_active_access_certificate_by_wrp(wrp_id):
+def get_active_access_certificate_by_id(id):
 
     try:
         connection = conn()
@@ -4014,10 +4014,10 @@ def get_active_access_certificate_by_wrp(wrp_id):
             SELECT id, state, serial_number, issuer_dn 
             FROM access_certificate 
 
-            WHERE wrp_id = %s AND state = "ACTIVE"
+            WHERE id = %s AND state = "ACTIVE"
         """
 
-        cursor.execute(query, (wrp_id))
+        cursor.execute(query, (id))
         rows = cursor.fetchone()
 
         if rows:
@@ -4030,7 +4030,7 @@ def get_active_access_certificate_by_wrp(wrp_id):
         return None
     
 #get access certificates from wrp      
-def get_canceled_access_certificate_by_wrp(wrp_id):
+def get_canceled_access_certificate_by_id(certificate_id):
 
     try:
         connection = conn()
@@ -4040,10 +4040,10 @@ def get_canceled_access_certificate_by_wrp(wrp_id):
             SELECT id, state, serial_number, issuer_dn 
             FROM access_certificate 
 
-            WHERE wrp_id = %s AND state = "CANCELED"
+            WHERE id = %s AND state = "CANCELED"
         """
 
-        cursor.execute(query, (wrp_id))
+        cursor.execute(query, (certificate_id))
         rows = cursor.fetchone()
 
         if rows:
@@ -4141,7 +4141,7 @@ def insert_registration_certificate(
             connection.close()
 
 #get registration certificates from intended_use     
-def get_active_registration_certificate_by_intended_use(intended_use_id):
+def get_active_registration_certificate_by_id(certificate_id):
 
     try:
         connection = conn()
@@ -4151,10 +4151,10 @@ def get_active_registration_certificate_by_intended_use(intended_use_id):
             SELECT id, state, idx, uri
             FROM registration_certificate
 
-            WHERE intended_use_id = %s AND state = "ACTIVE"
+            WHERE id = %s AND state = "ACTIVE"
         """
 
-        cursor.execute(query, (intended_use_id))
+        cursor.execute(query, (certificate_id))
         rows = cursor.fetchone()
 
         if rows:
