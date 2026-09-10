@@ -3172,7 +3172,6 @@ paths:
         "401":
           description: Invalid hash_pid
 
-
   /wallet_rp/create:
     post:
       summary: Create Wallet Relying Party
@@ -3388,13 +3387,200 @@ paths:
         "200":
           description: Wallet Relying Parties retrieved successfully
 
-  /wallet_rp/update_intended_use:
+  /wallet_rp_service/create:
     post:
-      summary: Add Intended Uses to WRP
+      summary: Create Wallet Relying Party Service
       description: |
-        Associates one or more Intended Use objects with an existing Wallet Relying Party.
+        Creates one or more Wallet Relying Party Service objects associated
+        with an existing Wallet Relying Party.
+        
+        The `WalletRelyingPartyService` object follows the Wallet Relying Party
+        Service definition described in the TS5 specification.
 
-        The Wallet Relying Party and all Intended Use objects must belong to the
+        The referenced Wallet Relying Party must already exist and belong
+        to the authenticated user.
+
+        ### Request Parameters
+
+        | Parameter | Description |
+        |-----------|-------------|
+        | `hash_pid` | Authenticated user session identifier. |
+        | `WalletRelyingParty` | ID of an existing Wallet Relying Party. |
+        | `WalletRelyingPartyService` | Collection of Wallet Relying Party Service objects. |
+
+        | Attribute | Type | Description |
+        |-----------|------|-------------|
+        | `serviceTradeName` | string | Commercial name of the Wallet Relying Party Service. |
+        | `serviceIdentifier` | string | Unique identifier of the Wallet Relying Party Service. |
+        | `supportURIs` | array<string> | Support endpoint URI(s) for the service. |
+        | `srvDescription` | array<object> | Localised service description(s). |
+        | `intendedUse_ids` | array<integer> | References to existing Intended Use objects. |
+        | `entitlements` | array<string> | Entitlements supported by the service. |
+        | `providesAttestations_ids` | array<integer> | References to existing Provided Attestation objects. |
+        | `usesIntermediarys` | array<integer> | References to Wallet Relying Parties acting as intermediaries. |
+        | `isIntermediary` | boolean | Automatically determined. `true` when the service does not use an intermediary, otherwise `false`. |
+
+      tags:
+        - WalletRelyingPartyService
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - hash_pid
+                - WalletRelyingParty
+                - WalletRelyingPartyService
+              properties:
+
+                hash_pid:
+                  type: string
+                  description: Authenticated user session identifier.
+                  example: "abc123hash"
+
+                WalletRelyingParty:
+                  type: integer
+                  description: ID of an existing Wallet Relying Party belonging to the authenticated user.
+                  example: 1
+
+                WalletRelyingPartyService:
+                  type: array
+                  description: Wallet Relying Party Service objects to be created.
+                  items:
+                    type: object
+                    required:
+                      - serviceTradeName
+                      - serviceIdentifier
+                      - supportURIs
+                      - srvDescription
+                    properties:
+
+                      serviceTradeName:
+                        type: string
+                        description: Commercial name of the Wallet Relying Party Service.
+                        example: "My Wallet Service"
+
+                      serviceIdentifier:
+                        type: string
+                        description: Identifier of the Wallet Relying Party Service.
+                        example: "wallet-service-001"
+
+                      supportURIs:
+                        type: array
+                        description: Support endpoint URI(s).
+                        items:
+                          type: string
+                          format: uri
+                        example:
+                          - "https://support.example.com"
+
+                      srvDescription:
+                        type: array
+                        description: Localised service description(s).
+                        items:
+                          type: object
+                          required:
+                            - lang
+                          properties:
+                            lang:
+                              type: string
+                              description: Language code of the description.
+                              example: "en"
+                            content:
+                              type: string
+                              description: Localised description content.
+                              example: "Wallet authentication service"
+
+                      intendedUse_ids:
+                        type: array
+                        description: References to existing Intended Use objects.
+                        items:
+                          type: integer
+                        example:
+                          - 1
+                          - 2
+
+                      entitlements:
+                        type: array
+                        description: Entitlements supported by the Wallet Relying Party Service.
+                        items:
+                          type: string
+                          enum:
+                            - "https://uri.etsi.org/19475/Entitlement/Service_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/QEAA_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/PID_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/QCert_for_ESeal_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/QCert_for_ESig_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/rQSealCDs_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/rQSigCDs_Provider"
+                            - "https://uri.etsi.org/19475/Entitlement/ESig_ESeal_Creation_Provider"
+                        example:
+                          - "https://uri.etsi.org/19475/Entitlement/Service_Provider"
+
+                      providesAttestations_ids:
+                        type: array
+                        description: References to existing Provided Attestation objects.
+                        items:
+                          type: integer
+                        example:
+                          - 1
+
+                      usesIntermediarys:
+                        type: array
+                        description: References to Wallet Relying Parties acting as intermediaries.
+                        items:
+                          type: integer
+                        example:
+                          - 2
+
+      responses:
+        "201":
+          description: Wallet Relying Party Service created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
+                  message:
+                    type: string
+                    example: Wallet Relying Party Service created successfully
+                  data:
+                    type: object
+                    properties:
+                      Wallet Relying Party Service new IDs:
+                        type: array
+                        items:
+                          type: integer
+                        example:
+                          - 1
+                          - 2
+
+        "400":
+          description: Invalid or missing input.
+
+        "401":
+          description: Invalid hash_pid.
+
+        "403":
+          description: Validation error, including ownership checks, duplicate Intended Use references, invalid entitlements, invalid intermediary references, or invalid Provided Attestation references.
+      
+  /wallet_rp_service/update_intended_use:
+    post:
+      summary: Add Intended Uses to WRP Service
+      description: |
+        Associates one or more Intended Use objects with an existing Wallet Relying Party Service.
+
+        The Wallet Relying Party Service and all Intended Use objects must belong to the
         authenticated user.
 
         ### Request Parameters
@@ -3402,10 +3588,10 @@ paths:
         | Parameter | Description |
         |-----------|-------------|
         | `hash_pid` | Authenticated user session identifier. |
-        | `wrp_id` | Identifier of the Wallet Relying Party to update. |
-        | `intended_use_ids` | List of Intended Use identifiers to associate with the Wallet Relying Party. |
+        | `wrp_service_id` | Identifier of the Wallet Relying Party Service to update. |
+        | `intended_use_ids` | List of Intended Use identifiers to associate with the Wallet Relying Party Service. |
       tags:
-        - WalletRelyingParty
+        - WalletRelyingPartyService
       parameters:
         - in: body
           name: body
@@ -3414,7 +3600,7 @@ paths:
             type: object
             required:
               - hash_pid
-              - wrp_id
+              - wrp_service_id
               - intended_use_ids
             properties:
               hash_pid:
@@ -3422,14 +3608,14 @@ paths:
                 example: "abc123hash"
                 description: Authenticated user session identifier.
 
-              wrp_id:
+              wrp_service_id:
                 type: integer
                 example: 1
-                description: Identifier of the Wallet Relying Party to update. The Wallet Relying Party must belong to the authenticated user.
+                description: Identifier of the Wallet Relying Party Service to update. The Wallet Relying Party Service must belong to the authenticated user.
 
               intended_use_ids:
                 type: array
-                description: List of Intended Use IDs to associate with the Wallet Relying Party. Every Intended Use must belong to the authenticated user.
+                description: List of Intended Use IDs to associate with the Wallet Relying Party Service. Every Intended Use must belong to the authenticated user.
                 items:
                   type: integer
                 example: [1, 2]
@@ -3464,14 +3650,14 @@ paths:
         "200":
           description: Intended Uses added successfully
 
-  /wallet_rp/update_provided_attestation:
+  /wallet_rp_service/update_provided_attestation:
     post:
-      summary: Update Provided Attestations for Wallet Relying Party
+      summary: Update Provided Attestations for Wallet Relying Party Service
       description: |
         Associates one or more Provided Attestation objects with an existing Wallet
-        Relying Party.
+        Relying Party Service.
 
-        The Wallet Relying Party and all Provided Attestation objects must belong to
+        The Wallet Relying Party Service and all Provided Attestation objects must belong to
         the authenticated user.
 
         ### Request Parameters
@@ -3479,10 +3665,10 @@ paths:
         | Parameter | Description |
         |-----------|-------------|
         | `hash_pid` | Authenticated user session identifier. |
-        | `wrp_id` | Identifier of the Wallet Relying Party to update. |
+        | `wrp_service_id` | Identifier of the Wallet Relying Party Service to update. |
         | `provided_attestation_ids` | List of Provided Attestation identifiers to associate with the Wallet Relying Party. |
       tags:
-        - WalletRelyingParty
+        - WalletRelyingPartyService
       parameters:
         - in: body
           name: body
@@ -3491,7 +3677,7 @@ paths:
             type: object
             required:
               - hash_pid
-              - wrp_id
+              - wrp_service_id
               - provided_attestation_ids
             properties:
               hash_pid:
@@ -3499,14 +3685,14 @@ paths:
                 example: "abc123hash"
                 description: Authenticated user session identifier.
 
-              wrp_id:
+              wrp_service_id:
                 type: integer
                 example: 1
-                description: Identifier of the Wallet Relying Party to update. The Wallet Relying Party must belong to the authenticated user.
+                description: Identifier of the Wallet Relying Party Service to update. The Wallet Relying Party Service must belong to the authenticated user.
 
               provided_attestation_ids:
                 type: array
-                description: List of Provided Attestation IDs to associate with the Wallet Relying Party. Every Provided Attestation must belong to the authenticated user.
+                description: List of Provided Attestation IDs to associate with the Wallet Relying Party Service. Every Provided Attestation must belong to the authenticated user.
                 items:
                   type: integer
                 example: [1, 2]
@@ -3541,24 +3727,24 @@ paths:
         "200":
           description: Updated successfully
 
-  /wallet_rp/update_uses_intermediary:
+  /wallet_rp_service/update_uses_intermediary:
     post:
-      summary: Update Uses Intermediary for Wallet Relying Party
+      summary: Update Uses Intermediary for Wallet Relying Party Service
       description: |
-        Associates one or more intermediary Wallet Relying Parties with an existing
-        Wallet Relying Party.
+        Associates one or more intermediary Wallet Relying Parties Service with an existing
+        Wallet Relying Party Service.
 
-        All referenced Wallet Relying Parties must belong to the authenticated user.
+        All referenced Wallet Relying Parties Service must belong to the authenticated user.
 
         ### Request Parameters
 
         | Parameter | Description |
         |-----------|-------------|
         | `hash_pid` | Authenticated user session identifier. |
-        | `wrp_id` | Identifier of the Wallet Relying Party to update. |
-        | `uses_intermediary_ids` | List of Wallet Relying Party identifiers representing intermediary services. |
+        | `wrp_service_id` | Identifier of the Wallet Relying Party Service to update. |
+        | `uses_intermediary_ids` | List of Wallet Relying Party Service identifiers representing intermediary services. |
       tags:
-        - WalletRelyingParty
+        - WalletRelyingPartyService
       parameters:
         - in: body
           name: body
@@ -3567,7 +3753,7 @@ paths:
             type: object
             required:
               - hash_pid
-              - wrp_id
+              - wrp_service_id
               - uses_intermediary_ids
             properties:
               hash_pid:
@@ -3575,14 +3761,14 @@ paths:
                 example: "abc123hash"
                 description: Authenticated user session identifier.
 
-              wrp_id:
+              wrp_service_id:
                 type: integer
                 example: 1
-                description: Identifier of the Wallet Relying Party to update. The Wallet Relying Party must belong to the authenticated user.
+                description: Identifier of the Wallet Relying Party Service to update. The Wallet Relying Party Service must belong to the authenticated user.
 
               uses_intermediary_ids:
                 type: array
-                description: List of Wallet Relying Party IDs to associate as intermediary services.
+                description: List of Wallet Relying Party Service IDs to associate as intermediary services.
                 items:
                   type: integer
                 example: [10, 11]
@@ -3594,7 +3780,7 @@ paths:
               type: object
               required:
                 - hash_pid
-                - wrp_id
+                - wrp_service_id
                 - uses_intermediary_ids
               properties:
                 hash_pid:
@@ -3602,7 +3788,7 @@ paths:
                   description: Authenticated user session identifier.
                   example: "abc123hash"
 
-                wrp_id:
+                wrp_service_id:
                   type: integer
                   example: 1
 
@@ -3616,24 +3802,21 @@ paths:
         "200":
           description: Updated successfully
 
-  /wallet_rp/remove_intended_use:
+  /wallet_rp_service/remove_intended_use:
     post:
-      summary: Remove Intended Uses from WRP
+      summary: Remove Intended Uses from WRP Service
       description: |
-        Removes one or more Intended Use associations from a Wallet Relying Party.
-
-        A Wallet Relying Party must always remain associated with at least one
-        Intended Use.
+        Removes one or more Intended Use associations from a Wallet Relying Party Service.
 
         ### Request Parameters
 
         | Parameter | Description |
         |-----------|-------------|
         | `hash_pid` | Authenticated user session identifier. |
-        | `wrp_id` | Identifier of the Wallet Relying Party to update. |
+        | `wrp_service_id` | Identifier of the Wallet Relying Party Service to update. |
         | `intended_use_ids` | List of Intended Use identifiers to remove. |
       tags:
-        - WalletRelyingParty
+        - WalletRelyingPartyService
       parameters:
         - in: body
           name: body
@@ -3642,7 +3825,7 @@ paths:
             type: object
             required:
               - hash_pid
-              - wrp_id
+              - wrp_service_id
               - intended_use_ids
             properties:
               hash_pid:
@@ -3650,14 +3833,14 @@ paths:
                 example: "abc123hash"
                 description: Authenticated user session identifier.
 
-              wrp_id:
+              wrp_service_id:
                 type: integer
                 example: 1
-                description: Identifier of the Wallet Relying Party to update. The Wallet Relying Party must belong to the authenticated user.
+                description: Identifier of the Wallet Relying Party Service to update. The Wallet Relying Party Service must belong to the authenticated user.
 
               intended_use_ids:
                 type: array
-                description: List of Intended Use IDs to associate with the Wallet Relying Party. Every Intended Use must belong to the authenticated user.
+                description: List of Intended Use IDs to associate with the Wallet Relying Party Service. Every Intended Use must belong to the authenticated user.
                 items:
                   type: integer
                 example: [1, 2]
@@ -3670,7 +3853,7 @@ paths:
               type: object
               required:
                 - hash_pid
-                - wrp_id
+                - wrp_service_id
                 - intended_use_ids
               properties:
                 hash_pid:
@@ -3678,7 +3861,7 @@ paths:
                   description: Authenticated user session identifier.
                   example: "abc123hash"
 
-                wrp_id:
+                wrp_service_id:
                   type: integer
                   example: 1
 
@@ -3692,22 +3875,22 @@ paths:
         "200":
           description: Intended Uses removed successfully
 
-  /wallet_rp/remove_provided_attestation:
+  /wallet_rp_service/remove_provided_attestation:
     post:
-      summary: Remove Provided Attestations from Wallet Relying Party
+      summary: Remove Provided Attestations from Wallet Relying Party Service
       description: |
         Removes one or more Provided Attestation associations from a Wallet Relying
-        Party.
+        Party Service.
 
         ### Request Parameters
 
         | Parameter | Description |
         |-----------|-------------|
         | `hash_pid` | Authenticated user session identifier. |
-        | `wrp_id` | Identifier of the Wallet Relying Party to update. |
+        | `wrp_service_id` | Identifier of the Wallet Relying Party Service to update. |
         | `provided_attestation_ids` | List of Provided Attestation identifiers to remove. |
       tags:
-        - WalletRelyingParty
+        - WalletRelyingPartyService
       parameters:
         - in: body
           name: body
@@ -3716,7 +3899,7 @@ paths:
             type: object
             required:
               - hash_pid
-              - wrp_id
+              - wrp_service_id
               - provided_attestation_ids
             properties:
               hash_pid:
@@ -3724,14 +3907,14 @@ paths:
                 example: "abc123hash"
                 description: Authenticated user session identifier.
 
-              wrp_id:
+              wrp_service_id:
                 type: integer
                 example: 1
-                description: Identifier of the Wallet Relying Party to update. The Wallet Relying Party must belong to the authenticated user.
+                description: Identifier of the Wallet Relying Party Service to update. The Wallet Relying Party Service must belong to the authenticated user.
 
               provided_attestation_ids:
                 type: array
-                description: List of Provided Attestation IDs to associate with the Wallet Relying Party. Every Provided Attestation must belong to the authenticated user.
+                description: List of Provided Attestation IDs to associate with the Wallet Relying Party Service. Every Provided Attestation must belong to the authenticated user.
                 items:
                   type: integer
                 example: [1, 2]
@@ -3743,7 +3926,7 @@ paths:
               type: object
               required:
                 - hash_pid
-                - wrp_id
+                - wrp_service_id
                 - provided_attestation_ids
               properties:
                 hash_pid:
@@ -3751,7 +3934,7 @@ paths:
                   description: Authenticated user session identifier.
                   example: "abc123hash"
 
-                wrp_id:
+                wrp_service_id:
                   type: integer
                   example: 1
 
@@ -3765,22 +3948,22 @@ paths:
         "200":
           description: Removed successfully
 
-  /wallet_rp/remove_uses_intermediary:
+  /wallet_rp_service/remove_uses_intermediary:
     post:
-      summary: Remove Uses Intermediary from Wallet Relying Party
+      summary: Remove Uses Intermediary from Wallet Relying Party Service
       description: |
-        Removes one or more intermediary Wallet Relying Party associations from an
-        existing Wallet Relying Party.
+        Removes one or more intermediary Wallet Relying Party Service associations from an
+        existing Wallet Relying Party Service.
 
         ### Request Parameters
 
         | Parameter | Description |
         |-----------|-------------|
         | `hash_pid` | Authenticated user session identifier. |
-        | `wrp_id` | Identifier of the Wallet Relying Party to update. |
-        | `uses_intermediary_ids` | List of intermediary Wallet Relying Party identifiers to remove. |
+        | `wrp_service_id` | Identifier of the Wallet Relying Party Service to update. |
+        | `uses_intermediary_ids` | List of intermediary Wallet Relying Party Service identifiers to remove. |
       tags:
-        - WalletRelyingParty
+        - WalletRelyingPartyService
       parameters:
         - in: body
           name: body
@@ -3789,7 +3972,7 @@ paths:
             type: object
             required:
               - hash_pid
-              - wrp_id
+              - wrp_service_id
               - uses_intermediary_ids
             properties:
               hash_pid:
@@ -3797,14 +3980,14 @@ paths:
                 example: "abc123hash"
                 description: Authenticated user session identifier.
 
-              wrp_id:
+              wrp_service_id:
                 type: integer
                 example: 1
-                description: Identifier of the Wallet Relying Party to update. The Wallet Relying Party must belong to the authenticated user.
+                description: Identifier of the Wallet Relying Party Service to update. The Wallet Relying Party Service must belong to the authenticated user.
 
               uses_intermediary_ids:
                 type: array
-                description: List of Wallet Relying Party IDs to associate as intermediary services.
+                description: List of Wallet Relying Party Service IDs to associate as intermediary services.
                 items:
                   type: integer
                 example: [10, 11]
@@ -3817,7 +4000,7 @@ paths:
               type: object
               required:
                 - hash_pid
-                - wrp_id
+                - wrp_service_id
                 - uses_intermediary_ids
               properties:
                 hash_pid:
@@ -3825,7 +4008,7 @@ paths:
                   description: Authenticated user session identifier.
                   example: "abc123hash"
 
-                wrp_id:
+                wrp_service_id:
                   type: integer
                   example: 1
 
