@@ -1880,7 +1880,7 @@ def update_wrp_service():
             return error_invalid(f"Wallet Relying Party Service id {WalletRelyingPartyService_id} doesn't belong to this user")
 
         if db.check_wrp_wrpService(WalletRelyingPartyService_id) != []:
-            return error_invalid(f"Wallet Relying Party Service id {WalletRelyingPartyService_id} already belongs to other wallet relying party service")
+            return error_invalid(f"Wallet Relying Party Service id {WalletRelyingPartyService_id} already belongs to other wallet relying party.")
 
     #insert data base
     for WalletRelyingPartyService_id in WalletRelyingPartyService_ids:
@@ -2016,7 +2016,7 @@ def create_wrp_service():
         if missing:
             return error_response("Missing required fields.", missing)
         
-        supportURI = wrp_service.get("supportURI", [])
+        supportURI = wrp_service.get("supportURIs", [])
         srvDescriptions = wrp_service.get("srvDescription", [])
         intendedUse_ids = wrp_service.get("intendedUse_ids", [])
         entitlements = wrp_service.get("entitlements", [])
@@ -2041,9 +2041,9 @@ def create_wrp_service():
                 if user_id != db.check_intendedUse(intendedUse_id):
                     return error_invalid(f"The intendedUse ID {intendedUse_id} does not belong to this user")
 
-            if db.check_wrp_intendedUse(intendedUse_id) != []:
-                return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party")
-        
+                if db.check_wrp_intendedUse(intendedUse_id) != []:
+                    return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party")
+            
         for entitlement in entitlements:
             if entitlement not in cfgserv.relying_party["Entitlement"]:
                 return error_invalid(f"Invalid entitlement. Must be one of: {', '.join(cfgserv.relying_party['Entitlement'])}")
@@ -2102,6 +2102,27 @@ def create_wrp_service():
             db.insert_wrp_intended_use(wrp_service_id, intendedUse_id)
 
     return create_response("Wallet Relying Party Service created successfully", "Wallet Relying Party Service new IDs", result)
+
+@rpr.route('/wallet_rp_service/list', methods=['POST'])
+def list_wrp_service():
+    data = request.get_json(silent=True)
+    
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["hash_pid"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    hash_pid = data.get("hash_pid")
+    
+    user_id = db.check_user(hash_pid)
+    if user_id is None:
+        return error_invalid("Invalid hash_pid")
+
+    result = db.get_wrp_service(user_id)
+
+    return list_response("Wallet Relying Party Service retrieved successfully.", result, "wrp_service")
 
 @rpr.route('/wallet_rp_service/update_intended_use', methods=['POST'])
 def update_wrp_intended_use():

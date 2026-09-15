@@ -2160,7 +2160,12 @@ def get_wrp(user_id):
                     sa.country,
                     sae.email,
                     sap.phone,
-                    saf.formURI
+                    saf.formURI,
+
+                    wrps.id,
+                    wrps.service_trade_name,
+                    wrps.service_identifier,
+                    wrps.is_intermediary
 
                 FROM wallet_relying_party wrp
 
@@ -2175,6 +2180,9 @@ def get_wrp(user_id):
                 
                 LEFT JOIN supervisory_authority_formuri saf
                     ON saf.authority_id = sa.id
+                
+                LEFT JOIN wallet_relying_party_service wrps
+                    ON wrps.wallet_relying_party_id = wrp.id
 
                 WHERE wrp.user_id = %s;
                 """
@@ -2188,7 +2196,8 @@ def get_wrp(user_id):
                 wrp_id, provider_id, trade_name,
                 is_psb, registry_uri, sa_id,
                 sa_name, sa_country,
-                sa_email, sa_phone, sa_form
+                sa_email, sa_phone, sa_form,
+                wrps_id, wrps_service_trade_name, wrps_service_identifier, wrps_is_intermediary
             ) in rows:
 
                 if wrp_id not in result:
@@ -2199,7 +2208,8 @@ def get_wrp(user_id):
                         "isPSB": bool(is_psb),
                         "registryURI": registry_uri,
 
-                        "SupervisoryAuthority": None
+                        "SupervisoryAuthority": None,
+                        "wallet_relying_party_service": []
                     }
 
                 wrp = result[wrp_id]
@@ -2225,6 +2235,18 @@ def get_wrp(user_id):
 
                     if sa_form and sa_form not in sa["formURI"]:
                         sa["formURI"].append(sa_form)
+
+                # Wallet Relying Party Services
+                if wrps_id:
+                    service = {
+                        "wrp_service_id": wrps_id,
+                        "serviceTradeName": wrps_service_trade_name,
+                        "serviceIdentifier": wrps_service_identifier,
+                        "isIntermediary": bool(wrps_is_intermediary)
+                    }
+
+                    if service not in wrp["wallet_relying_party_service"]:
+                        wrp["wallet_relying_party_service"].append(service)
 
             return list(result.values())
 
@@ -2273,14 +2295,15 @@ def get_wrp_service(user_id):
             cursor = connection.cursor()
 
             query = """
-                SELECT 
+                SELECT
+                    wrps.id,
+                    wrps.service_trade_name,
+                    wrps.service_identifier,
+                    wrps.is_intermediary,
+
                     wrp.id,
                     wrp.provider_id,
                     wrp.trade_name,
-                    wrp.is_psb,
-                    wrp.registry_uri,
-                    wrp.is_intermediary,
-                    wrp.supervisory_authority_id,
 
                     su.uri,
                     we.entitlement,
@@ -2290,12 +2313,6 @@ def get_wrp_service(user_id):
                     mls.lang,
                     mls.content,
 
-                    sa.name,
-                    sa.country,
-                    sae.email,
-                    sap.phone,
-                    saf.formURI,
-
                     iu.id,
                     iu.intended_use_identifier,
 
@@ -2303,43 +2320,34 @@ def get_wrp_service(user_id):
                     pa.format,
                     pa.meta
 
-                FROM wallet_relying_party wrp
+                FROM wallet_relying_party_service wrps
 
+                LEFT JOIN wallet_relying_party wrp
+                    ON wrp.id = wrps.wallet_relying_party_id
+    
                 LEFT JOIN wrp_support_uri su
-                    ON su.wrp_id = wrp.id
+                    ON su.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_entitlement we
-                    ON we.wrp_id = wrp.id
+                    ON we.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_intermediary wi
-                    ON wi.wrp_id = wrp.id
+                    ON wi.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_srv_description wsd
-                    ON wsd.wrp_id = wrp.id
+                    ON wsd.wrp_service_id = wrps.id
 
                 LEFT JOIN multilanguage_string mls
                     ON mls.id = wsd.mls_id
 
-                LEFT JOIN supervisory_authority sa
-                    ON sa.id = wrp.supervisory_authority_id
-
-                LEFT JOIN supervisory_authority_email sae
-                    ON sae.authority_id = sa.id
-
-                LEFT JOIN supervisory_authority_phone sap
-                    ON sap.authority_id = sa.id
-                
-                LEFT JOIN supervisory_authority_formuri saf
-                    ON saf.authority_id = sa.id
-
                 LEFT JOIN wrp_intended_use wrpiu
-                    ON wrpiu.wrp_id = wrp.id
+                    ON wrpiu.wrp_service_id = wrps.id
                     
                 LEFT JOIN intended_use iu
                     ON iu.id = wrpiu.intended_use_id
 
                 LEFT JOIN wrp_provided_attestation wpa
-                    ON wpa.wrp_id = wrp.id
+                    ON wpa.wrp_service_id = wrps.id
                     
                 LEFT JOIN provided_attestation pa
                     ON pa.id = wpa.provided_attestation_id
@@ -2353,39 +2361,36 @@ def get_wrp_service(user_id):
             result = {}
 
             for (
-                wrp_id, provider_id, trade_name,
-                is_psb, registry_uri, is_intermediary, sa_id,
+                wrps_id, wrps_service_trade_name, wrps_service_identifier, wrps_isIntermediary,
+                wrp_id, wrp_provider_id, wrp_trade_name,
                 support_uri, entitlement,
                 intermediary_id,
                 lang, content,
-                sa_name, sa_country,
-                sa_email, sa_phone, sa_form,
                 iu_id, iu_intended_use_identifier,
                 pa_id, pa_format, pa_meta
             ) in rows:
 
-                if wrp_id not in result:
-                    result[wrp_id] = {
+                if wrps_id not in result:
+                    result[wrps_id] = {
+                        "wrp_id": wrps_id,
+                        "wrp_service_trade_name": wrps_service_trade_name,
+                        "wrp_service_identifier": wrps_service_identifier,
+                        "wrp_service_isIntermediary": bool(wrps_isIntermediary),
                         "wrp_id": wrp_id,
-                        "provider_id": provider_id,
-                        "trade_name": trade_name,
-                        "isPSB": bool(is_psb),
-                        "registryURI": registry_uri,
-                        "isIntermediary": bool(is_intermediary),
+                        "wrp_provider_id": wrp_provider_id,
+                        "wrp_trade_name": wrp_trade_name,
 
                         "supportURI": [],
                         "entitlements": [],
                         "srvDescription": [],
                         "usesIntermediary": [],
 
-                        "SupervisoryAuthority": None,
-
                         "intendedUses": [],
 
                         "providedAttestation": [] 
                     }
 
-                wrp = result[wrp_id]
+                wrp = result[wrps_id]
 
                 # supportURI
                 if support_uri and support_uri not in wrp["supportURI"]:
@@ -2405,28 +2410,6 @@ def get_wrp_service(user_id):
                     if obj not in wrp["srvDescription"]:
                         wrp["srvDescription"].append(obj)
 
-                # Supervisory Authority
-                if sa_name:
-                    if wrp["SupervisoryAuthority"] is None:
-                        wrp["SupervisoryAuthority"] = {
-                            "name": sa_name,
-                            "country": sa_country,
-                            "email": [],
-                            "phone": [],
-                            "formURI": []
-                        }
-
-                    sa = wrp["SupervisoryAuthority"]
-
-                    if sa_email and sa_email not in sa["email"]:
-                        sa["email"].append(sa_email)
-
-                    if sa_phone and sa_phone not in sa["phone"]:
-                        sa["phone"].append(sa_phone)
-
-                    if sa_form and sa_form not in sa["formURI"]:
-                        sa["formURI"].append(sa_form)
-                
                 # Intended Uses
                 if iu_id:
                     obj = {
