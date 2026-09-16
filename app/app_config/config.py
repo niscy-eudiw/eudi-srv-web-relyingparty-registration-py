@@ -112,6 +112,8 @@ class ConfService:
     wrprc_privateKey = os.getenv("WRPRC_PRIVATEkEY", "app/EJBCA/ecdsa_key.pem")
 
     wrprc_certificate = os.getenv("WRPRC_CERTIFICATE", "app/EJBCA/ecdsa_cert.pem")
+
+    wrprc_intermediate= os.getenv("WRPRC_INTERMEDIATE_certificate")
     
 
     # log_dir = "/tmp/log"

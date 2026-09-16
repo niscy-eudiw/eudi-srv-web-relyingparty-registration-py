@@ -2504,7 +2504,7 @@ def intended_use_registration_certificate():
     id = legal_entity[0]["identifier"][0]["identifier"]
 
     #id = legal_entity_data[0]["identifier"]
-    privacy_policy = intended_use[0]["privacyPolicy"][0]["type"]
+    privacy_policy = intended_use[0]["privacyPolicy"][0]["policy_uri"]
 
 # # definir de acordo com os dados do certificado
 # # policy_id=certificate_policy_id
@@ -2682,7 +2682,12 @@ def intended_use_registration_certificate():
         cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-    
+
+    with open(cfgserv.wrprc_intermediate, "rb") as f:
+        intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
+
+    base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+
     #Jades with b-b profile
 
     # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
@@ -2704,17 +2709,27 @@ def intended_use_registration_certificate():
     #print(document)
     payload=json.dumps({
 
-            "documents":[{
+            "documents":[
+                {
+                    "document": base64_payload,
+                    "signature_format": "CB",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+                },
+                {
 
-                "document": base64_payload,
-                "signature_format": "J",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
 
-            } ],
+                    "document": base64_payload,
+                    "signature_format": "J",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+
+                } ],
         "endEntityCertificate": base64_cert,
         "certificateChain": [
+            base64_intermediate_cert
         ],
         "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
 
@@ -2733,9 +2748,13 @@ def intended_use_registration_certificate():
 
     #print(hashes1[0])
 
-    base64_string = urllib.parse.unquote(hashes1[0])
+    base64_string_cbor = urllib.parse.unquote(hashes1[0])
 
-    data_to_be_signed = base64.b64decode(base64_string)
+    data_to_be_signed_cbor = base64.b64decode(base64_string_cbor)
+
+    base64_string_JWT = urllib.parse.unquote(hashes1[1])
+    
+    data_to_be_signed_jwt = base64.b64decode(base64_string_JWT)
 
     #print(data_to_be_signed)
 
@@ -2752,19 +2771,28 @@ def intended_use_registration_certificate():
         backend=default_backend()
     )
 
-    # key=ECC.import_key(private_key)
-
-    # signature = DSS.new(key).sign(data_to_be_signed)
-    signature = private_key.sign(
-        data_to_be_signed,
+    signature_cbor = private_key.sign(
+        data_to_be_signed_cbor,
         ec.ECDSA(utils.Prehashed(hashes.SHA256()))
     )
+    base64_signature_cbor= base64.b64encode(signature_cbor).decode()
 
-    base64_signature= base64.b64encode(signature).decode()
+    signature_jwt = private_key.sign(
+        data_to_be_signed_jwt,
+        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
+    )
+    base64_signature_jwt= base64.b64encode(signature_jwt).decode()
     #print(base64_signature)
 
     payload = json.dumps({
         "documents": [
+            {
+                "document": base64_payload,
+                "signature_format": "CB",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            },
             {
                 "document": base64_payload,
                 "signature_format": "J",
@@ -2777,16 +2805,17 @@ def intended_use_registration_certificate():
         "returnValidationInfo": False,
         "endEntityCertificate": base64_cert,
         "certificateChain": [
+            base64_intermediate_cert
         ],
-        "signatures":[base64_signature],
+        "signatures":[base64_signature_cbor, base64_signature_jwt],
         "date": signature_date
     }).encode()
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
-    document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
+    document_with_signature=obtain_signed_document.json()["documentWithSignature"]
 
-    data=json.loads(base64.b64decode(document_with_signature).decode("utf-8"))
+    data=json.loads(base64.b64decode(document_with_signature[1]).decode("utf-8"))
 
     jwt_payload=data["payload"]
     jwt_header=data["signatures"][0]["protected"]
@@ -2794,23 +2823,8 @@ def intended_use_registration_certificate():
 
     jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
 
-    #cbor
-
-    cbor_data= cbor2.dumps(json_payload)
-
-    msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
-
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        pem_bytes = f.read()
-
-    cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
-    msg.key = cose_key
-    cose_bytes = msg.encode()
-
-    #file_data = base64.b64decode(document_with_signature)
-
     file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
-    cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
+    cose_base64 = document_with_signature[0]
 
     db.insert_registration_certificate(
         jwt_certificate=file_base64,
