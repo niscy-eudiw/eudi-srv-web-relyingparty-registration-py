@@ -105,13 +105,26 @@ class ConfService:
                         "http://data.europa.eu/eudi/policy/registration-policy"]
     }
 
+    formats= {
+        "SUPPORTED_FORMATS": ["dc+sd-jwt",
+                              "mso_mdoc",
+                              "jwt_vc_json", 
+                              "jwt_vc_json-ld",
+                              "ldp_vc"]
+    }
+
+
     sca_signer_url= os.getenv("SCA_SIGNER_URL", "http://localhost:8086")
 
     url_statuslist= os.getenv("URL_STATUSLIST", "https://dev.issuer.eudiw.dev/token_status_list/take")
 
-    wrprc_privateKey = os.getenv("WRPRC_PRIVATEkEY", "app/EJBCA/ecdsa_key.pem")
+    statuslist_apikey= os.getenv("STATUSLIST_API_KEY")
+
+    wrprc_privateKey = os.getenv("WRPRC_PRIVATE_KEY", "app/EJBCA/ecdsa_key.pem")
 
     wrprc_certificate = os.getenv("WRPRC_CERTIFICATE", "app/EJBCA/ecdsa_cert.pem")
+
+    wrprc_intermediate= os.getenv("WRPRC_INTERMEDIATE_CERTIFICATE")
     
 
     # log_dir = "/tmp/log"
