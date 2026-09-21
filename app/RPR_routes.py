@@ -2555,7 +2555,7 @@ def intended_use_registration_certificate():
 
     headers={
         "accept": "application/json",
-        "X-API-Key": "test" ,
+        "X-API-Key": cfgserv.statuslist_apikey ,
         "Content-Type": "application/x-www-form-urlencoded",
     }
 

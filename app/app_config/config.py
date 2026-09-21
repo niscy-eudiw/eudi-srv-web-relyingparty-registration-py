@@ -109,11 +109,13 @@ class ConfService:
 
     url_statuslist= os.getenv("URL_STATUSLIST", "https://dev.issuer.eudiw.dev/token_status_list/take")
 
-    wrprc_privateKey = os.getenv("WRPRC_PRIVATEkEY", "app/EJBCA/ecdsa_key.pem")
+    statuslist_apikey= os.getenv("STATUSLIST_API_KEY")
+
+    wrprc_privateKey = os.getenv("WRPRC_PRIVATE_KEY", "app/EJBCA/ecdsa_key.pem")
 
     wrprc_certificate = os.getenv("WRPRC_CERTIFICATE", "app/EJBCA/ecdsa_cert.pem")
 
-    wrprc_intermediate= os.getenv("WRPRC_INTERMEDIATE_certificate")
+    wrprc_intermediate= os.getenv("WRPRC_INTERMEDIATE_CERTIFICATE")
     
 
     # log_dir = "/tmp/log"
