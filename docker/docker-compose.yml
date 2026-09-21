@@ -31,7 +31,12 @@ services:
       TRUSTED_CAS_PATH: 'app\certs'
       LOG_PATH: 'app\logs'
       VERIFIER: 'verifier-backend.eudiw.dev'
+
+      #scytales
       SCYTALES_VERIFIER: ''
+      WALLET_CONNECTOR_CLIENT_ID: ''
+      WALLET_CONNECTOR_CLIENT_SECRET: ''
+      SCYTALES_METADATA_URL: ''
 
       SCA_SIGNER_URL: ''
       URL_STATUSLIST: ''
