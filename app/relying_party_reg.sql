@@ -134,9 +134,7 @@ CREATE TABLE IF NOT EXISTS `legal_entity_email` (
   CONSTRAINT `legal_entity_email_ibfk_1` FOREIGN KEY (`legal_entity_id`) REFERENCES `legal_entity` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Exportação de dados não seleccionada.
 
--- A despejar estrutura para tabela wrp.legal_entity_info_uri
 CREATE TABLE IF NOT EXISTS `legal_entity_info_uri` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `legal_entity_id` int(11) DEFAULT NULL,
@@ -422,9 +420,7 @@ CREATE TABLE IF NOT EXISTS `wrp_support_uri` (
   CONSTRAINT `wrp_support_uri_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Exportação de dados não seleccionada.
 
--- A despejar estrutura para tabela wrp.access_certificate
 CREATE TABLE IF NOT EXISTS `access_certificate` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `pkcs12_certificate` longtext NOT NULL,
@@ -442,9 +438,7 @@ CREATE TABLE IF NOT EXISTS `access_certificate` (
   CONSTRAINT `fk_access_certificate_wrp` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Exportação de dados não seleccionada.
 
--- A despejar estrutura para tabela wrp.registration_certificate
 CREATE TABLE IF NOT EXISTS `registration_certificate` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `jwt_certificate` longtext NOT NULL,
@@ -461,7 +455,6 @@ CREATE TABLE IF NOT EXISTS `registration_certificate` (
   CONSTRAINT `fk_registration_certificate_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Exportação de dados não seleccionada.
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;

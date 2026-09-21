@@ -33,9 +33,13 @@ services:
       VERIFIER: 'verifier-backend.eudiw.dev'
 
       SCA_SIGNER_URL: ''
+
       URL_STATUSLIST: ''
-      WRPRC_PRIVATEkEY: 'app/EJBCA/ecdsa_key.pem'
-      WRPRC_CERTIFICATE: 'app/EJBCA/ecdsa_cert.pem'
+      STATUSLIST_API_KEY: ''
+
+      WRPRC_PRIVATE_KEY: 'app/EJBCA/ecdsa_key.pem'
+      WRPRC_CERTIFICATE: 'app/EJBCA/ecdsa_cert.der'
+      WRPRC_INTERMEDIATE_CERTIFICATE: ''
 
       DB_HOST: 'host.docker.internal'
       DB_PORT: 3306

@@ -80,8 +80,6 @@ def validate_vp_token(response_json):
 
         return True, "Status invalid:" + str(mdoc_cbor["status"])
 
-    print("\nmdoc_cbor: ", mdoc_cbor)
-
     error, errorMsg = validate_certificate(mdoc_cbor["documents"][0])
 
     if error == False:
@@ -203,7 +201,10 @@ def validate_certificate(mdoc):
             return False, "Certificate not valid"
 
         try:
-            message.verify_signature()
+            t=message.verify_signature()
+
+            if t==False:
+                return False, "Signature not valid"
 
         except Exception as e:
             return False, "Signature not valid"
