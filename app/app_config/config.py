@@ -105,6 +105,15 @@ class ConfService:
                         "http://data.europa.eu/eudi/policy/registration-policy"]
     }
 
+    formats= {
+        "SUPPORTED_FORMATS": ["dc+sd-jwt",
+                              "mso_mdoc",
+                              "jwt_vc_json", 
+                              "jwt_vc_json-ld",
+                              "ldp_vc"]
+    }
+
+
     sca_signer_url= os.getenv("SCA_SIGNER_URL", "http://localhost:8086")
 
     url_statuslist= os.getenv("URL_STATUSLIST", "https://dev.issuer.eudiw.dev/token_status_list/take")
