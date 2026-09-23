@@ -2645,7 +2645,7 @@ def intended_use_registration_certificate():
     id = legal_entity[0]["identifier"][0]["identifier"]
 
     #id = legal_entity_data[0]["identifier"]
-    privacy_policy = intended_use[0]["privacyPolicy"][0]["policy_uri"]
+    privacy_policy = intended_use[0]["privacyPolicy"][0]["policyURI"]
 
 # # definir de acordo com os dados do certificado
 # # policy_id=certificate_policy_id
@@ -2696,7 +2696,7 @@ def intended_use_registration_certificate():
 
     headers={
         "accept": "application/json",
-        "X-API-Key": cfgserv.statuslist_apikey ,
+        "X-API-Key": cfgserv.statuslist_apikey,
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
