@@ -2514,10 +2514,11 @@ def wrp_access_certificate():
     response = response.json()
 
     certificate = response.get("certificate")
-
+    print(response)
     if not certificate:
         extra = {"response": response}
         logger.error("Error EJBCA response.", extra=extra)
+
         return error_invalid("Error EJBCA response.")
 
     certificate_bytes = base64.b64decode(certificate)
