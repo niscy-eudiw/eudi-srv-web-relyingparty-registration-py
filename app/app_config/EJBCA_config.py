@@ -36,7 +36,7 @@ class EJBCA_Config:
     managementCA=os.getenv("managementCA")
 
     # Endpoint:
-    endpoint= "/certificate/pkcs10enroll/certificate/pkcs10enroll"
+    endpoint= "/certificate/pkcs10enroll"
     # Values required by the endpoint "/pkcs10enroll":
     certificateProfileName= os.getenv("CERTIFICATE_PROFILE_NAME")
     endEntityProfileName= os.getenv("END_ENTITY_PROFILE_NAME")

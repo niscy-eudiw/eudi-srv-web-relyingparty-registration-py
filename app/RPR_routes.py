@@ -2511,12 +2511,6 @@ def wrp_access_certificate():
     
     response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
 
-    response = response.json()
-    print("\n\n\n\n ejbca response")
-    print(response)
-    print("\n\n\n\n ejbca response")
-    certificate = response.get("certificate")
-
     if not certificate:
         extra = {"response": response}
         logger.error("Error EJBCA response.", extra=extra)
