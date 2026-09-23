@@ -2510,15 +2510,17 @@ def wrp_access_certificate():
     trustCA= getTrustManagerOfCACertificate(ManagementCA)
     
     response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
-    
+
     response = response.json()
-    if response["certificate"]:
-        
-        extra = {'response': response} 
-        logger.info(f"Error ejbca response.", extra=extra)
-        return error_invalid("Error ejbca response.")
-    
-    certificate_bytes=base64.b64decode(response["certificate"])
+
+    certificate = response.get("certificate")
+
+    if not certificate:
+        extra = {"response": response}
+        logger.error("Error EJBCA response.", extra=extra)
+        return error_invalid("Error EJBCA response.")
+
+    certificate_bytes = base64.b64decode(certificate)
 
     certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
 
