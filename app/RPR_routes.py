@@ -2854,12 +2854,16 @@ def intended_use_registration_certificate():
 
     base64_payload=base64.b64encode(file_bytes).decode("utf-8")
 
+    cbor_data= cbor2.dumps(json_payload)
+
+    base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
+
     #print(document)
     payload=json.dumps({
 
             "documents":[
                 {
-                    "document": base64_payload,
+                    "document": base64_cbor,
                     "signature_format": "CB",
                     "conformance_level":"Ades-B-B",
                     "signed_envelope_property": "ENVELOPING",
@@ -2935,7 +2939,7 @@ def intended_use_registration_certificate():
     payload = json.dumps({
         "documents": [
             {
-                "document": base64_payload,
+                "document": base64_cbor,
                 "signature_format": "CB",
                 "conformance_level":"Ades-B-B",
                 "signed_envelope_property": "ENVELOPING",
