@@ -2710,9 +2710,9 @@ def intended_use_registration_certificate():
     data={
         "country":"FC",
         "doctype":"wrprc",
-        "expiry_date":(now + timedelta(days=6*30)).strftime("%Y-%m-%d")
+        "expiry_date":(now + timedelta(minutes=1)).strftime("%Y-%m-%d")
     }
-
+    
     response = requests.post(cfgserv.url_statuslist, headers=headers, data=data)
     
     status=response.json()
@@ -3344,29 +3344,31 @@ def intended_use_registration_certificate_error():
     }
 
     if error_type == "expired":
-        expiry_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        status_idx=6732
+        status_uri="https://dev.issuer.eudiw.dev/token_status_list/FC/wrprc/9f6f8173-1f90-4a9d-b433-942c8e64e836"
     else:
         expiry_date = (now + timedelta(days=6*30)).strftime("%Y-%m-%d")
 
-    data = {
-        "country": "FC",
-        "doctype": "wrprc",
-        "expiry_date": expiry_date
-    }
+        data = {
+            "country": "FC",
+            "doctype": "wrprc",
+            "expiry_date": expiry_date
+        }
 
-    response = requests.post(
-        cfgserv.url_statuslist,
-        headers=headers,
-        data=data
-    )
+        response = requests.post(
+            cfgserv.url_statuslist,
+            headers=headers,
+            data=data
+        )
 
-    status=response.json()
+        status=response.json()
 
-    if "status_list" not in status:
-        return error_invalid("Status List error")
+        if "status_list" not in status:
+            return error_invalid("Status List error")
 
-    status_idx=status["status_list"]["idx"]
-    status_uri=status["status_list"]["uri"]
+        status_idx=status["status_list"]["idx"]
+        status_uri=status["status_list"]["uri"]
 
     credentials = [
         cred
@@ -3464,12 +3466,12 @@ def intended_use_registration_certificate_error():
         })
 
     with open(cfgserv.wrprc_certificate, "rb") as f:
-        cert = x509.load_der_x509_certificate(f.read(), default_backend())
+        cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
 
     with open(cfgserv.wrprc_intermediate, "rb") as f:
-        intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
+        intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
     base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
 
@@ -3591,16 +3593,6 @@ def intended_use_registration_certificate_error():
 
     file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
     cose_base64 = document_with_signature[0]
-
-    db.insert_registration_certificate(
-        jwt_certificate=file_base64,
-        cbor_certificate=cose_base64,
-        state="ACTIVE",
-        created_at=now,
-        expires_at=(now + timedelta(days=6*30)),
-        intended_use_id=intended_use_id,
-        user_id=user_id,
-    )
 
     return jsonify({
         "status": "success",
