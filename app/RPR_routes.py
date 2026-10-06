@@ -2842,7 +2842,6 @@ def intended_use_registration_certificate():
             }
         })
         
-    print(json.dumps(json_payload, indent=4))
     with open(cfgserv.wrprc_certificate, "rb") as f:
         cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
