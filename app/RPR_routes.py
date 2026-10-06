@@ -95,12 +95,23 @@ from app_config.Crypto_Info import Crypto_Info as crypto
 import models as db
 import user as get_hash_user_pid
 from app.data_management import oid4vp_requests,p12_temp, certificate_data_List
+from app.app_config.scytales_connector import scytales
 
 from app import logger
-from app.app import oauth
+from . import oauth
 from flask import send_from_directory
 
 rpr = Blueprint("RPR", __name__, url_prefix="/")
+
+# Register Scytales Wallet Connector
+oauth.register(
+    name=scytales.name,
+    client_id=scytales.client_id,
+    client_secret=scytales.client_secret,
+    server_metadata_url=scytales.server_metadata_url,
+    client_kwargs=scytales.client_kwargs
+)
+client = oauth.create_client(scytales.name)
 
 rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template/')
 

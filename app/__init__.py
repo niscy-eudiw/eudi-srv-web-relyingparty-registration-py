@@ -54,6 +54,7 @@ from logging.handlers import TimedRotatingFileHandler
 import os
 from app_config.database import ConfDataBase
 from flask_swagger_ui import get_swaggerui_blueprint
+from authlib.integrations.flask_client import OAuth
 
 SWAGGER_URL = "/swagger"
 API_URL = "/swagger/api.yaml"
@@ -65,6 +66,8 @@ swaggerui_blueprint = get_swaggerui_blueprint(
         "app_name": "Wallet RP API"
     }
 )
+
+oauth = OAuth()
 
 def setup_logger():
     log_dir = cfgserv.log_dir
@@ -213,6 +216,8 @@ def create_app():
     app.config['SECRET_KEY'] = ConfService.secret_key
 
     app.register_error_handler(404, page_not_found)
+
+    oauth.init_app(app)
     
     from . import (RPR_routes)
     app.register_blueprint(RPR_routes.rpr)
