@@ -38,7 +38,7 @@ from . import trusted_CAs
 from app_config.config import ConfService as cfgservice
 
 
-def validate_vp_token(response_json):
+def validate_vp_token(response_json, type = None):
     """
     Validate VP token, checking document and presentation_submission attributes
     """
