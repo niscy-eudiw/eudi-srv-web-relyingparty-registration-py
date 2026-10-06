@@ -1274,6 +1274,12 @@ def create_credential():
                     "Field 'path' cannot be empty."
                 )
 
+            for elem in claim["path"]:
+                if not isinstance(elem, str):
+                    return error_response(
+                        "Each element in 'path' must be a string."
+                    )
+
     #insert data base
     for credential in credentials:
         format = credential.get("format")
@@ -2835,7 +2841,8 @@ def intended_use_registration_certificate():
                 "sname": rp_intermediary[0]["trade_name"]
             }
         })
-    
+        
+    print(json.dumps(json_payload, indent=4))
     with open(cfgserv.wrprc_certificate, "rb") as f:
         cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
