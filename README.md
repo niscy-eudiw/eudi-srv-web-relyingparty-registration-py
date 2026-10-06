@@ -207,11 +207,23 @@ Description: Verifier URL
 Variable: `LOG_PATH`<br>
 Description: Path where log files are saved
 
-Variable: `CERT`<br>
+Variable: `SCA_SIGNER_URL`<br>
+Description: SCA URL 
+
+Variable: `URL_STATUSLIST`<br>
+Description: Status List URL
+
+Variable: `STATUSLIST_API_KEY`<br>
+Description: Status List API Key
+
+Variable: `WRPRC_CERTIFICATE`<br>
 Description: Container path where the WRPRC signing certificate is stored
 
-Variable: `PRIV_KEY`<br>
+Variable: `WRPRC_PRIVATE_KEY`<br>
 Description: Container path where the private key of the WRPRC signing certificate is stored
+
+Variable: `WRPRC_INTERMEDIATE_CERTIFICATE`<br>
+Description: Container path where the intermediate certificate of the WRPRC signing certificate is stored (for certificate chain)
 
 Variable: `DB_HOST`<br>
 Description: Database URL

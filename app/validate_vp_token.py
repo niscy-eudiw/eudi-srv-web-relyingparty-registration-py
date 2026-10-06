@@ -80,13 +80,6 @@ def validate_vp_token(response_json, type = None):
 
         return True, "Status invalid:" + str(mdoc_cbor["status"])
 
-    error = True
-    errorMsg = ""
-
-    if type != 'scytales':
-        error, errorMsg = validate_certificate(mdoc_cbor["documents"][0])
-
-
     error, errorMsg = validate_certificate(mdoc_cbor["documents"][0])
 
     if error == False:
@@ -208,7 +201,10 @@ def validate_certificate(mdoc):
             return False, "Certificate not valid"
 
         try:
-            message.verify_signature()
+            t=message.verify_signature()
+
+            if t==False:
+                return False, "Signature not valid"
 
         except Exception as e:
             return False, "Signature not valid"

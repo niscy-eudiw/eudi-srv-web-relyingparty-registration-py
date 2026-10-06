@@ -164,24 +164,21 @@ def setup_trusted_CAs():
 setup_trusted_CAs()
 
 def handle_exception(e):
-
     return (
-        render_template(
-            "500.html",
-            error="Sorry, an internal server error has occurred. Our team has been notified and is working to resolve the issue. Please try again later.",
-            error_code="Internal Server Error",
-        ),
+        jsonify({
+            "error": "Internal Server Error",
+            "message": "An internal server error occurred."
+        }),
         500,
     )
 
-def page_not_found(e):
 
+def page_not_found(e):
     return (
-        render_template(
-            "500.html",
-            error_code="Page not found",
-            error="Page not found.We're sorry, we couldn't find the page you requested.",
-        ),
+        jsonify({
+            "error": "Not Found",
+            "message": "The requested resource was not found."
+        }),
         404,
     )
 

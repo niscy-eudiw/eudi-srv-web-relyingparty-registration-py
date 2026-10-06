@@ -567,16 +567,62 @@ def create_legal_person():
 
     #verification
     for legalPerson in legalPersons:
-        missing = validate_required_fields(legalPerson, ["legalName"])
+
+        if not isinstance(legalPerson, dict):
+            return error_invalid(
+                "Each legalPerson must be an object."
+            )
+
+        missing = validate_required_fields(
+            legalPerson,
+            ["legalName"]
+        )
+
         if missing:
-            return error_response("Missing required fields.", missing)
-        
+            return error_response(
+                "Missing required fields.",
+                missing
+            )
+
+        legal_names = legalPerson.get("legalName", [])
+
+        if not isinstance(legal_names, list):
+            return error_invalid(
+                "legalName must be a list."
+            )
+
+        if not legal_names:
+            return error_invalid(
+                "legalName must contain at least one name."
+            )
+
+        clean_legal_names = []
+
+        for legal_name in legal_names:
+
+            if not isinstance(legal_name, str):
+                return error_invalid(
+                    "Each legalName must be a string."
+                )
+
+            legal_name = legal_name.strip()
+
+            if not legal_name:
+                return error_invalid(
+                    "legalName cannot be empty or contain only whitespace."
+                )
+
+            clean_legal_names.append(legal_name)
+
         laws = legalPerson.get("law", [])
+
         for law in laws:
             if law:
                 if user_id != db.check_law(law):
-                    return error_invalid(f"law id {law} doesn't belong to this user")
-    
+                    return error_invalid(
+                        f"law id {law} doesn't belong to this user"
+                    )
+                
     #inserts data base
     for legalPerson in legalPersons:
         legalNames = legalPerson.get("legalName", [])
@@ -1105,6 +1151,9 @@ def create_provider():
     hash_pid = data.get("hash_pid")
     providers = data.get("provider", [])
 
+    if not isinstance(providers, list):
+        return error_invalid("'provider' must be a list.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
@@ -1113,7 +1162,10 @@ def create_provider():
 
     #validation
     for provider in providers:
-        missing = validate_required_fields(provider, ["policy_id", "providerType"])
+        if not isinstance(provider, dict):
+            return error_invalid("Each provider must be an object.")
+        
+        missing = validate_required_fields(provider, ["legalEntityId", "policy_id", "providerType"])
         if missing:
             return error_response("Missing required fields.", missing)
 
@@ -1130,8 +1182,14 @@ def create_provider():
                 return error_invalid(f"The policy has an incorrect type; it must be a policy with a type for 'Wallet Relying Party'(intention: wrp). Must be one of: {', '.join(cfgserv.relying_party['Type of Policy'])}")
 
         legalEntityId = provider.get("legalEntityId")
+        
+        if not isinstance(legalEntityId, int) or isinstance(legalEntityId, bool):
+            return error_invalid("legalEntityId must be an integer.")
+
         if user_id != db.check_legal_entity(legalEntityId):
-            return error_invalid(f"The Legal Entity ID {legalEntityId} does not belong to this user")
+            return error_invalid(
+                f"The Legal Entity ID {legalEntityId} does not belong to this user"
+            )
             
     #insert data base
     for provider in providers:
@@ -1297,6 +1355,12 @@ def create_credential():
         missing = validate_required_fields(credential, ["format", "meta", "claims"])
         if missing:
             return error_response("Missing required fields.", missing)
+
+        if credential["format"] not in cfgserv.formats["SUPPORTED_FORMATS"]:
+            return error_invalid(
+                f"Invalid credential format. Must be one of: "
+                f"{', '.join(cfgserv.formats['SUPPORTED_FORMATS'])}"
+            )
         
         if not isinstance(credential["meta"], dict):
             return error_response(
@@ -1318,6 +1382,12 @@ def create_credential():
                 return error_response(
                     "Field 'path' cannot be empty."
                 )
+
+            for elem in claim["path"]:
+                if not isinstance(elem, str):
+                    return error_response(
+                        "Each element in 'path' must be a string."
+                    )
 
     #insert data base
     for credential in credentials:
@@ -1380,35 +1450,106 @@ def create_intended_use():
 
     #validation
     for intended_use in intended_uses:
-        missing = validate_required_fields(intended_use, ["intendedUseIdentifier", "createdAt", "revokedAt", "purpose", "privacyPolicy_id", "credential_ids"])
+
+        missing = validate_required_fields(
+            intended_use,
+            [
+                "intendedUseIdentifier",
+                "createdAt",
+                "revokedAt",
+                "purpose",
+                "privacyPolicy_id",
+                "credential_ids"
+            ]
+        )
+
         if missing:
-            return error_response("Missing required fields.", missing)
-        
+            return error_response(
+                "Missing required fields.",
+                missing
+            )
+
+        created_at = intended_use.get("createdAt")
+        revoked_at = intended_use.get("revokedAt")
+
+        try:
+            created_at_date = datetime.strptime(
+                created_at,
+                "%Y-%m-%d"
+            ).date()
+
+            revoked_at_date = datetime.strptime(
+                revoked_at,
+                "%Y-%m-%d"
+            ).date()
+
+        except (TypeError, ValueError):
+            return error_invalid(
+                "createdAt and revokedAt must be valid dates in YYYY-MM-DD format."
+            )
+
+        if revoked_at_date <= created_at_date:
+            return error_invalid(
+                "revokedAt cannot be earlier than createdAt."
+            )
+
         purposes = intended_use.get("purpose", [])
+
         for purpose in purposes:
-            missing = validate_required_fields(purpose, ["lang", "content"])
+            missing = validate_required_fields(
+                purpose,
+                ["lang", "content"]
+            )
+
             if missing:
-                return error_response("Missing required fields.", missing)
-            
+                return error_response(
+                    "Missing required fields.",
+                    missing
+                )
+
             lang = purpose.get("lang")
-            
+
             if lang not in cfgserv.eu_languages:
-                return error_invalid(f"Invalid purpose_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
-        
-        privacyPolicy_ids = intended_use.get("privacyPolicy_id", [])
+                return error_invalid(
+                    f"Invalid purpose_lang. Must be one of: "
+                    f"{', '.join(cfgserv.eu_languages)}"
+                )
+
+        privacyPolicy_ids = intended_use.get(
+            "privacyPolicy_id",
+            []
+        )
+
         for privacyPolicy_id in privacyPolicy_ids:
             row = db.check_policy(privacyPolicy_id)
-            
-            if user_id[0] != row[0]:
-                return error_invalid(f"The Policy ID {privacyPolicy_id} does not belong to this user")
-            
-            if row[1] not in cfgserv.intended_use["Type of Privacy Policy"]:
-                return error_invalid( f"The policy has an incorrect type; it must be a policy with a type for 'Wallet Relying Party'(intention: wrp). Must be one of: {', '.join(cfgserv.relying_party['Type of Policy'])}")
 
-        credential_ids = intended_use.get("credential_ids", [])
+            if user_id[0] != row[0]:
+                return error_invalid(
+                    f"The Policy ID {privacyPolicy_id} "
+                    f"does not belong to this user"
+                )
+
+            if row[1] not in cfgserv.intended_use[
+                "Type of Privacy Policy"
+            ]:
+                return error_invalid(
+                    "The policy has an incorrect type; it must be "
+                    "a policy with a type for 'Wallet Relying Party' "
+                    "(intention: wrp). Must be one of: "
+                    f"{', '.join(cfgserv.relying_party['Type of Policy'])}"
+                )
+
+        credential_ids = intended_use.get(
+            "credential_ids",
+            []
+        )
+
         for credential_id in credential_ids:
             if user_id != db.check_credentials(credential_id):
-                return error_invalid(f"The Credential ID {credential_id} does not belong to this user.")
+                return error_invalid(
+                    f"The Credential ID {credential_id} "
+                    f"does not belong to this user."
+                )
             
     #insert data base
     for intended_use in intended_uses:
@@ -1675,6 +1816,12 @@ def create_provided_attestation():
             return error_response(
                 "Field 'meta' must be an object."
             )
+        
+        if providesAttestation["format"] not in cfgserv.formats["SUPPORTED_FORMATS"]:
+            return error_invalid(
+                f"Invalid Provides Attestation format. Must be one of: "
+                f"{', '.join(cfgserv.formats['SUPPORTED_FORMATS'])}"
+            )
     
     #insert data base
     for providesAttestation in providesAttestations:
@@ -1855,8 +2002,8 @@ def create_wrp():
                 if user_id != db.check_intendedUse(intendedUse_id):
                     return error_invalid(f"The intendedUse ID {intendedUse_id} does not belong to this user")
 
-            if db.check_wrp_intendedUse(intendedUse_id) != []:
-                return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party")
+                if db.check_wrp_intendedUse(intendedUse_id) != []:
+                    return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party")
         
         for entitlement in entitlements:
             if entitlement not in cfgserv.relying_party["Entitlement"]:
@@ -2476,12 +2623,19 @@ def wrp_access_certificate():
     ManagementCA = ejbca.managementCA
 
     trustCA= getTrustManagerOfCACertificate(ManagementCA)
-
+    
     response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
 
     response = response.json()
-    
-    certificate_bytes=base64.b64decode(response["certificate"])
+
+    certificate = response.get("certificate")
+
+    if not certificate:
+        extra = {"response": response}
+        logger.error("Error EJBCA response.", extra=extra)
+        return error_invalid("Error EJBCA response.")
+
+    certificate_bytes = base64.b64decode(certificate)
 
     certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
 
@@ -2613,7 +2767,7 @@ def intended_use_registration_certificate():
     id = legal_entity[0]["identifier"][0]["identifier"]
 
     #id = legal_entity_data[0]["identifier"]
-    privacy_policy = intended_use[0]["privacyPolicy"][0]["type"]
+    privacy_policy = intended_use[0]["privacyPolicy"][0]["policyURI"]
 
 # # definir de acordo com os dados do certificado
 # # policy_id=certificate_policy_id
@@ -2628,7 +2782,17 @@ def intended_use_registration_certificate():
     # if wrp[0]["providesAttestations"]:
     #     providesAttestations = wrp[0]["providesAttestations"]
     public_body = wrp[0]["isPSB"]
-    srv_description = wrp[0]["srvDescription"]
+    srv_descriptions = wrp[0]["srvDescription"]
+    
+    service = [
+        [
+            {
+                "lang": description["lang"],
+                "value": description["value"]
+            }
+            for description in srv_descriptions
+        ]
+    ]
 
 # #A URI to a status list presenting information about validity of the WRPRC. 
 # #status=
@@ -2664,7 +2828,7 @@ def intended_use_registration_certificate():
 
     headers={
         "accept": "application/json",
-        "X-API-Key": "test" ,
+        "X-API-Key": cfgserv.statuslist_apikey,
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
@@ -2704,7 +2868,7 @@ def intended_use_registration_certificate():
                         "credentials": credentials,
                         "entitlements": entitlement,
                         "public_body": False,
-                        "srv_description": srv_description,
+                        "srv_description": service,
                         "support_uri":supportURI,
                         "status": { 
                             "status_list": { 
@@ -2786,12 +2950,17 @@ def intended_use_registration_certificate():
                 "sname": rp_intermediary[0]["trade_name"]
             }
         })
-    
+        
     with open(cfgserv.wrprc_certificate, "rb") as f:
         cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-    
+
+    with open(cfgserv.wrprc_intermediate, "rb") as f:
+        intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
+
+    base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+
     #Jades with b-b profile
 
     # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
@@ -2810,20 +2979,34 @@ def intended_use_registration_certificate():
 
     base64_payload=base64.b64encode(file_bytes).decode("utf-8")
 
+    cbor_data= cbor2.dumps(json_payload)
+
+    base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
+
     #print(document)
     payload=json.dumps({
 
-            "documents":[{
+            "documents":[
+                {
+                    "document": base64_cbor,
+                    "signature_format": "CB",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+                },
+                {
 
-                "document": base64_payload,
-                "signature_format": "J",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
 
-            } ],
+                    "document": base64_payload,
+                    "signature_format": "J",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+
+                } ],
         "endEntityCertificate": base64_cert,
         "certificateChain": [
+            base64_intermediate_cert
         ],
         "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
 
@@ -2842,9 +3025,13 @@ def intended_use_registration_certificate():
 
     #print(hashes1[0])
 
-    base64_string = urllib.parse.unquote(hashes1[0])
+    base64_string_cbor = urllib.parse.unquote(hashes1[0])
 
-    data_to_be_signed = base64.b64decode(base64_string)
+    data_to_be_signed_cbor = base64.b64decode(base64_string_cbor)
+
+    base64_string_JWT = urllib.parse.unquote(hashes1[1])
+    
+    data_to_be_signed_jwt = base64.b64decode(base64_string_JWT)
 
     #print(data_to_be_signed)
 
@@ -2861,19 +3048,28 @@ def intended_use_registration_certificate():
         backend=default_backend()
     )
 
-    # key=ECC.import_key(private_key)
-
-    # signature = DSS.new(key).sign(data_to_be_signed)
-    signature = private_key.sign(
-        data_to_be_signed,
+    signature_cbor = private_key.sign(
+        data_to_be_signed_cbor,
         ec.ECDSA(utils.Prehashed(hashes.SHA256()))
     )
+    base64_signature_cbor= base64.b64encode(signature_cbor).decode()
 
-    base64_signature= base64.b64encode(signature).decode()
+    signature_jwt = private_key.sign(
+        data_to_be_signed_jwt,
+        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
+    )
+    base64_signature_jwt= base64.b64encode(signature_jwt).decode()
     #print(base64_signature)
 
     payload = json.dumps({
         "documents": [
+            {
+                "document": base64_cbor,
+                "signature_format": "CB",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            },
             {
                 "document": base64_payload,
                 "signature_format": "J",
@@ -2886,16 +3082,17 @@ def intended_use_registration_certificate():
         "returnValidationInfo": False,
         "endEntityCertificate": base64_cert,
         "certificateChain": [
+            base64_intermediate_cert
         ],
-        "signatures":[base64_signature],
+        "signatures":[base64_signature_cbor, base64_signature_jwt],
         "date": signature_date
     }).encode()
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
-    document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
+    document_with_signature=obtain_signed_document.json()["documentWithSignature"]
 
-    data=json.loads(base64.b64decode(document_with_signature).decode("utf-8"))
+    data=json.loads(base64.b64decode(document_with_signature[1]).decode("utf-8"))
 
     jwt_payload=data["payload"]
     jwt_header=data["signatures"][0]["protected"]
@@ -2903,23 +3100,8 @@ def intended_use_registration_certificate():
 
     jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
 
-    #cbor
-
-    cbor_data= cbor2.dumps(json_payload)
-
-    msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
-
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        pem_bytes = f.read()
-
-    cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
-    msg.key = cose_key
-    cose_bytes = msg.encode()
-
-    #file_data = base64.b64decode(document_with_signature)
-
     file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
-    cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
+    cose_base64 = document_with_signature[0]
 
     db.insert_registration_certificate(
         jwt_certificate=file_base64,
