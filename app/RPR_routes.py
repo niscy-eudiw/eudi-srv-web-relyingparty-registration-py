@@ -1873,12 +1873,13 @@ def create_wrp():
             return error_invalid(f"The supervisoryAuthority ID {supervisoryAuthority} does not belong to this user")
         
         if usesIntermediarys:
+
             for usesIntermediary in usesIntermediarys:
                 if user_id != db.check_wrp(usesIntermediary):
                     return error_invalid(f"The usesIntermediary ID {usesIntermediary} does not belong to this user")
                 
-                if db.check_wrp_intermediary(usesIntermediary) != []:
-                    return error_invalid(f"The usesIntermediary ID {usesIntermediary} already is a Intermediary")
+                if db.check_wrp_intermediary(usesIntermediary) != 1:
+                    return error_invalid(f"The usesIntermediary ID {usesIntermediary} is not a Intermediary Wallet Relying Party")
 
         if providesAttestations_ids:
             for providesAttestations_id in providesAttestations_ids:
@@ -1915,7 +1916,7 @@ def create_wrp():
         supportURIs = wrp.get("supportURI", [])
         srvDescriptions = wrp.get("srvDescription", [])
         isPSB = wrp.get("isPSB")
-        isIntermediary = True
+        isIntermediary = wrp.get("isIntermediary")
         entitlements = wrp.get("entitlements", [])
         usesIntermediarys = wrp.get("usesIntermediary", [])
         providesAttestations_ids = wrp.get("providesAttestations_id", [])
@@ -2074,7 +2075,10 @@ def update_wrp_uses_intermediary():
         if user_id != db.check_wrp(uses_intermediary_id):
             return error_invalid(f"Wallet Relying Party id {uses_intermediary_id} doesn't belong to this user")
         
-        if db.check_wrp_intermediary(uses_intermediary_id) != []:
+        if db.check_wrp_intermediary(uses_intermediary_id) != 1:
+            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} is not a Intermediary Wallet Relying Party")
+
+        if db.check_wrp_intermediary_with_wpr(wrp_id, uses_intermediary_id) != []:
             return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} already is a Intermediary")
         
     #insert data base
@@ -2493,7 +2497,7 @@ def wrp_access_certificate():
     #servicesDescription=RP[0]["srvDescription"]#como as TSLs, ex: lang en, description=test  
     #entitlement=RP[0]["entitlement"]
     # verificar legal entity se é pertence ao sector público, se sim True, se não False
-    isPSB= False
+    #isPSB= False
 #### ------
     # password=request.form.get("Password")
 
@@ -2758,7 +2762,7 @@ def intended_use_registration_certificate():
                         "iat": iat, 
                         "credentials": credentials,
                         "entitlements": entitlement,
-                        "public_body": False,
+                        "public_body": public_body,
                         "srv_description": service,
                         "support_uri":supportURI,
                         "status": { 
