@@ -3305,14 +3305,42 @@ def check_wrp_intermediary(intermediary_wrp_id):
 
             query = """
                 SELECT 
+                    wrp.is_intermediary
+
+                FROM wallet_relying_party wrp
+
+                WHERE wrp.id = %s;
+            """
+            
+            cursor.execute(query, (intermediary_wrp_id,))
+            row = cursor.fetchone()
+            if row:
+                return bool(row[0])
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return []
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def check_wrp_intermediary_with_wpr(wrp, intermediary_wrp_id):
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                SELECT 
                     wrpi.intermediary_wrp_id
 
                 FROM wrp_intermediary wrpi
 
-                WHERE wrpi.intermediary_wrp_id = %s;
+                WHERE wrpi.intermediary_wrp_id = %s AND wrpi.wrp_id = %s;
             """
             
-            cursor.execute(query, (intermediary_wrp_id,))
+            cursor.execute(query, (intermediary_wrp_id, wrp))
             row = cursor.fetchone()
             if row:
                 return row
