@@ -3182,6 +3182,8 @@ paths:
         The `WalletRelyingParty` object follows the Wallet Relying Party
         definition described in the TS5 specification.
 
+        If usesIntermediary is provided (non-empty array), isIntermediary will be set to False.
+
         ### Request Parameters
 
         | Parameter | Description |
@@ -3204,6 +3206,7 @@ paths:
         | `usesIntermediary` | array<integer> | References to intermediary Wallet Relying Parties, when applicable. |
         | `entitlements` | array<string> | Entitlements supported by the Wallet Relying Party. |
         | `isPSB` | boolean | Indicates whether the Wallet Relying Party is a PSB. |
+        | `isIntermediary` | boolean | Indicates whether the Wallet Relying Party is an intermediary (Optional, by default False) . | 
       tags:
         - WalletRelyingParty
 
@@ -3312,6 +3315,10 @@ paths:
                       isPSB:
                         type: boolean
                         example: true
+
+                      isIntermediary:
+                        type: boolean
+                        example: false
 
       responses:
         "200":

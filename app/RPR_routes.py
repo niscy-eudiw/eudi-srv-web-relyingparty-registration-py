@@ -1916,7 +1916,7 @@ def create_wrp():
         supportURIs = wrp.get("supportURI", [])
         srvDescriptions = wrp.get("srvDescription", [])
         isPSB = wrp.get("isPSB")
-        isIntermediary = wrp.get("isIntermediary")
+        isIntermediary = wrp.get("isIntermediary", False)
         entitlements = wrp.get("entitlements", [])
         usesIntermediarys = wrp.get("usesIntermediary", [])
         providesAttestations_ids = wrp.get("providesAttestations_id", [])
