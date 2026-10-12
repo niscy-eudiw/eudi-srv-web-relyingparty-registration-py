@@ -3264,7 +3264,7 @@ def intended_use_registration_certificate_error():
     intended_use_id = data.get("intended_use_id")
     error_type = data.get("error_type")
 
-    supported_errors = ["invalid_signature", "expired"]
+    supported_errors = ["invalid_signature"]
 
     if error_type not in supported_errors:
         return error_invalid(
