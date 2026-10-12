@@ -3549,8 +3549,16 @@ def intended_use_registration_certificate_error():
     base64_signature_jwt= base64.b64encode(signature_jwt).decode()
 
     if error_type == "invalid_signature":
-        signature_cbor = b"\x00" + signature_cbor[1:]
-        signature_jwt = b"\x00" + signature_jwt[1:]
+
+        json_payload["name"] = "Invalid Signature"
+        
+        file_bytes = json.dumps(json_payload).encode()
+        
+        base64_payload=base64.b64encode(file_bytes).decode("utf-8")
+    
+        cbor_data= cbor2.dumps(json_payload)
+    
+        base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
 
     payload = json.dumps({
         "documents": [
