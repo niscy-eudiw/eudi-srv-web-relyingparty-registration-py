@@ -2730,7 +2730,7 @@ def intended_use_registration_certificate():
     data={
         "country":"FC",
         "doctype":"wrprc",
-        "expiry_date":(now + timedelta(minutes=1)).strftime("%Y-%m-%d")
+        "expiry_date":(now + timedelta(days=6*30)).strftime("%Y-%m-%d")
     }
     
     response = requests.post(cfgserv.url_statuslist, headers=headers, data=data)
