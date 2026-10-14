@@ -3343,32 +3343,28 @@ def intended_use_registration_certificate_error():
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    if error_type == "expired":
-        
-        status_idx=6732
-        status_uri="https://dev.issuer.eudiw.dev/token_status_list/FC/wrprc/9f6f8173-1f90-4a9d-b433-942c8e64e836"
-    else:
-        expiry_date = (now + timedelta(days=6*30)).strftime("%Y-%m-%d")
 
-        data = {
-            "country": "FC",
-            "doctype": "wrprc",
-            "expiry_date": expiry_date
-        }
+    expiry_date = (now + timedelta(days=6*30)).strftime("%Y-%m-%d")
 
-        response = requests.post(
-            cfgserv.url_statuslist,
-            headers=headers,
-            data=data
-        )
+    data = {
+        "country": "FC",
+        "doctype": "wrprc",
+        "expiry_date": expiry_date
+    }
 
-        status=response.json()
+    response = requests.post(
+        cfgserv.url_statuslist,
+        headers=headers,
+        data=data
+    )
 
-        if "status_list" not in status:
-            return error_invalid("Status List error")
+    status=response.json()
 
-        status_idx=status["status_list"]["idx"]
-        status_uri=status["status_list"]["uri"]
+    if "status_list" not in status:
+        return error_invalid("Status List error")
+
+    status_idx=status["status_list"]["idx"]
+    status_uri=status["status_list"]["uri"]
 
     credentials = [
         cred
