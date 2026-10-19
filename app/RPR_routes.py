@@ -3032,9 +3032,9 @@ def intended_use_registration_certificate():
         'Content-Type': 'application/json'
     }
 
-    calculate_hash=requests.post(url=cfgserv.sca_signer_url+"/signatures/calculate_hash",headers=headers, data=payload)
+    calculate_hash=requests.post(url=cfgserv.sca_signer_url + "/signatures/calculate_hash", headers=headers, data=payload)
 
-    #print(calculate_hash.json())
+    print(calculate_hash.json())
     #print(calculate_hash.json()["hashes"])
 
     hashes1 = calculate_hash.json()["hashes"]
@@ -3104,7 +3104,7 @@ def intended_use_registration_certificate():
         "date": signature_date
     }).encode()
 
-    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
+    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url + "/signatures/obtain_signed_doc", headers=headers, data=payload)
     
     document_with_signature=obtain_signed_document.json()["documentWithSignature"]
 
