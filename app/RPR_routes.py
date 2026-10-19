@@ -2772,6 +2772,7 @@ def intended_use_registration_certificate():
     name = wrp[0]["trade_name"]
     supportURI = wrp[0]["supportURI"][0]
     purpose = intended_use[0]["purpose"]
+    info_uri = None
     if legal_entity[0].get("infoURI") and len(legal_entity[0]["infoURI"]) > 0:
         info_uri = legal_entity[0]["infoURI"][0]
     country = legal_entity[0]["country"]
