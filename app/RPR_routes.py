@@ -3034,7 +3034,7 @@ def intended_use_registration_certificate():
 
     calculate_hash=requests.post(url=cfgserv.sca_signer_url + "/signatures/calculate_hash", headers=headers, data=payload)
 
-    print(calculate_hash.json())
+    print(calculate_hash.status_code)
     #print(calculate_hash.json()["hashes"])
 
     hashes1 = calculate_hash.json()["hashes"]
