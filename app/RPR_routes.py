@@ -2843,11 +2843,6 @@ def intended_use_registration_certificate():
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
 
-    with open(cfgserv.wrprc_intermediate, "rb") as f:
-        intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
-
-    base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-
     #Jades with b-b profile
 
     # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
@@ -2975,12 +2970,17 @@ def intended_use_registration_certificate():
         "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
         "returnValidationInfo": False,
         "endEntityCertificate": base64_cert,
-        "certificateChain": [
-            base64_intermediate_cert
-        ],
+        "certificateChain": [],
         "signatures":[base64_signature_cbor, base64_signature_jwt],
         "date": signature_date
     }).encode()
+
+    if cfgserv.wrprc_intermediate:
+        with open(cfgserv.wrprc_intermediate, "rb") as f:
+            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
+
+        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+        payload["certificateChain"].append(base64_intermediate_cert)
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
@@ -3486,11 +3486,6 @@ def intended_use_registration_certificate_error():
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
 
-    with open(cfgserv.wrprc_intermediate, "rb") as f:
-        intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
-
-    base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-
     file_bytes = json.dumps(json_payload).encode()
 
     base64_payload=base64.b64encode(file_bytes).decode("utf-8")
@@ -3596,12 +3591,17 @@ def intended_use_registration_certificate_error():
         "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
         "returnValidationInfo": False,
         "endEntityCertificate": base64_cert,
-        "certificateChain": [
-            base64_intermediate_cert
-        ],
+        "certificateChain": [],
         "signatures":[base64_signature_cbor, base64_signature_jwt],
         "date": signature_date
     }).encode()
+    
+    if cfgserv.wrprc_intermediate:
+        with open(cfgserv.wrprc_intermediate, "rb") as f:
+            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+
+        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+        payload["certificateChain"].append(base64_intermediate_cert)
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
