@@ -2893,11 +2893,18 @@ def intended_use_registration_certificate():
                 } ],
         "endEntityCertificate": base64_cert,
         "certificateChain": [
-            base64_intermediate_cert
+            
         ],
         "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
 
     })
+
+    if cfgserv.wrprc_intermediate:
+        with open(cfgserv.wrprc_intermediate, "rb") as f:
+            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+
+        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+        payload["certificateChain"].append(base64_intermediate_cert)
 
     headers={
         'Content-Type': 'application/json'
