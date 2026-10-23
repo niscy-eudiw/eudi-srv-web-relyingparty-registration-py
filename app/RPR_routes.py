@@ -2799,16 +2799,6 @@ def intended_use_registration_certificate():
     #     providesAttestations = wrp[0]["providesAttestations"]
     public_body = wrp[0]["isPSB"]
     srv_descriptions = wrp[0]["srvDescription"]
-    
-    service = [
-        [
-            {
-                "lang": description["lang"],
-                "value": description["value"]
-            }
-            for description in srv_descriptions
-        ]
-    ]
 
 # #A URI to a status list presenting information about validity of the WRPRC. 
 # #status=
@@ -2884,7 +2874,7 @@ def intended_use_registration_certificate():
                         "credentials": credentials,
                         "entitlements": entitlement,
                         "public_body": public_body,
-                        "srv_description": service,
+                        "srv_description": srv_descriptions,
                         "support_uri":supportURI,
                         "status": { 
                             "status_list": { 
