@@ -275,7 +275,7 @@ def authentication():
 
     if request.args.get("type") and request.args.get("type") == "scytales_connector":
 
-        redirect_uri = url_for('callback', _external=True)
+        redirect_uri = url_for('RPR.callback', _external=True)
         return oauth.scytales.authorize_redirect(redirect_uri)
 
     if request.args.get("type") and request.args.get("type") == "scytales":
@@ -290,6 +290,8 @@ def authentication():
             + response["client_id"]
             + "&request_uri="
             + response["request_uri"]
+            + "&request_uri_method="
+            + response["request_uri_method"]
         )
 
 
