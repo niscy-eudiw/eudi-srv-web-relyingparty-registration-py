@@ -270,6 +270,8 @@ def authentication():
         + response["client_id"]
         + "&request_uri="
         + response["request_uri"]
+        + "&request_uri_method="
+        + response["request_uri_method"]
     )
 
     
@@ -329,8 +331,7 @@ def getpidoid4vp():
     else:
         presentation_id = request.args.get("presentation_id")
           
-        url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
-    
+        url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id 
     headers = {
     'Content-Type': 'application/json',
     }
