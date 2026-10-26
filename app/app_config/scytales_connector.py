@@ -30,10 +30,10 @@ from logging.handlers import TimedRotatingFileHandler
 
 class scytales:
 
+    name="scytales"
     client_id=os.environ.get('WALLET_CONNECTOR_CLIENT_ID'),
     client_secret=os.environ.get('WALLET_CONNECTOR_CLIENT_SECRET'),
     server_metadata_url=os.environ.get('SCYTALES_METADATA_URL'),
-    name="scytales"
     client_kwargs={
         'scope': 'openid scope:pid',  # Request Mobile Driver's License
         'code_challenge_method': 'S256'  # Enable PKCE
