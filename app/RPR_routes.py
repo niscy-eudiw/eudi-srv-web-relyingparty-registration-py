@@ -111,7 +111,6 @@ oauth.register(
     server_metadata_url=scytales.server_metadata_url,
     client_kwargs=scytales.client_kwargs
 )
-client = oauth.create_client(scytales.name)
 
 rpr.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template/')
 
@@ -281,7 +280,7 @@ def authentication():
 
         redirect_uri = scytales.callback
 
-        return client.authorize_redirect(redirect_uri)
+        return oauth.scytales.authorize_redirect(redirect_uri)
 
     if request.args.get("type") and request.args.get("type") == "scytales":
 
@@ -415,8 +414,14 @@ responses:
     if(check_user == None):
         db.insert_user(hash_pid)
         return (hash_pid)
+    
     else:
-        return (hash_pid)
+        front_end = session.pop("front_end", None)
+
+        if front_end:
+            return redirect(f"{front_end}?hash_pid={hash_pid}")
+        else:
+            return (hash_pid)
 
 @rpr.route("/pid_authorization", methods=["GET"])
 def pid_authorization_get():
