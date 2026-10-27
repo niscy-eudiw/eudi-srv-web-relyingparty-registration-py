@@ -27,6 +27,7 @@ import random
 from flask import  session
 import logging
 from logging.handlers import TimedRotatingFileHandler
+import app.app_config.config as cfgserv
 
 class scytales:
 
@@ -38,3 +39,5 @@ class scytales:
         'scope': 'openid scope:pid',  # Request Mobile Driver's License
         'code_challenge_method': 'S256'  # Enable PKCE
     }
+
+    callback = cfgserv.service_url + 'callback'

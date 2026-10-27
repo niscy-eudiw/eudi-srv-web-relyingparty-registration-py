@@ -275,8 +275,13 @@ def authentication():
 
     if request.args.get("type") and request.args.get("type") == "scytales_connector":
 
-        redirect_uri = url_for('RPR.callback', _external=True)
-        return oauth.scytales.authorize_redirect(redirect_uri)
+        redirect_front_end = request.args.get("redirect_uri")
+        if redirect_front_end:
+            session["front_end"] = redirect_front_end
+
+        redirect_uri = scytales.callback
+
+        return client.authorize_redirect(redirect_uri)
 
     if request.args.get("type") and request.args.get("type") == "scytales":
 
