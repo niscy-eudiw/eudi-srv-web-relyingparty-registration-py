@@ -27,7 +27,7 @@ import random
 from flask import  session
 import logging
 from logging.handlers import TimedRotatingFileHandler
-import app.app_config.config as cfgserv
+from app_config.config import ConfService as cfgserv
 
 class scytales:
 
