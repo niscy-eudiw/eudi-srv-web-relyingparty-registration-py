@@ -2867,40 +2867,37 @@ def intended_use_registration_certificate():
     base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
 
     #print(document)
-    payload=json.dumps({
-
-            "documents":[
-                {
-                    "document": base64_cbor,
-                    "signature_format": "CB",
-                    "conformance_level":"Ades-B-B",
-                    "signed_envelope_property": "ENVELOPING",
-                    "container": "No"
-                },
-                {
-
-
-                    "document": base64_payload,
-                    "signature_format": "J",
-                    "conformance_level":"Ades-B-B",
-                    "signed_envelope_property": "ENVELOPING",
-                    "container": "No"
-
-                } ],
-        "endEntityCertificate": base64_cert,
-        "certificateChain": [
-            
+    payload = {
+        "documents": [
+            {
+                "document": base64_cbor,
+                "signature_format": "CB",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            },
+            {
+                "document": base64_payload,
+                "signature_format": "J",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            }
         ],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
-
-    })
-
+        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+        "returnValidationInfo": False,
+        "endEntityCertificate": base64_cert,
+        "certificateChain": []
+    }
+    
     if cfgserv.wrprc_intermediate:
         with open(cfgserv.wrprc_intermediate, "rb") as f:
             intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
         base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
         payload["certificateChain"].append(base64_intermediate_cert)
+
+    payload = json.dumps(payload).encode()
 
     headers={
         'Content-Type': 'application/json'
@@ -2951,7 +2948,7 @@ def intended_use_registration_certificate():
     base64_signature_jwt= base64.b64encode(signature_jwt).decode()
     #print(base64_signature)
 
-    payload = json.dumps({
+    payload = {
         "documents": [
             {
                 "document": base64_cbor,
@@ -2974,14 +2971,16 @@ def intended_use_registration_certificate():
         "certificateChain": [],
         "signatures":[base64_signature_cbor, base64_signature_jwt],
         "date": signature_date
-    }).encode()
-
+    }
+    
     if cfgserv.wrprc_intermediate:
         with open(cfgserv.wrprc_intermediate, "rb") as f:
             intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
         base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
         payload["certificateChain"].append(base64_intermediate_cert)
+
+    payload = json.dumps(payload).encode()
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
@@ -3516,9 +3515,7 @@ def intended_use_registration_certificate_error():
 
                 } ],
         "endEntityCertificate": base64_cert,
-        "certificateChain": [
-            base64_intermediate_cert
-        ],
+        "certificateChain": [],
         "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
 
     })
@@ -3572,37 +3569,39 @@ def intended_use_registration_certificate_error():
     
         base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
 
-    payload = json.dumps({
-        "documents": [
-            {
-                "document": base64_cbor,
-                "signature_format": "CB",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-            },
-            {
-                "document": base64_payload,
-                "signature_format": "J",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-            }
-        ],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
-        "returnValidationInfo": False,
-        "endEntityCertificate": base64_cert,
-        "certificateChain": [],
-        "signatures":[base64_signature_cbor, base64_signature_jwt],
-        "date": signature_date
-    }).encode()
+        payload = {
+            "documents": [
+                {
+                    "document": base64_cbor,
+                    "signature_format": "CB",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+                },
+                {
+                    "document": base64_payload,
+                    "signature_format": "J",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+                }
+            ],
+            "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+            "returnValidationInfo": False,
+            "endEntityCertificate": base64_cert,
+            "certificateChain": [],
+            "signatures":[base64_signature_cbor, base64_signature_jwt],
+            "date": signature_date
+        }
+        
+        if cfgserv.wrprc_intermediate:
+            with open(cfgserv.wrprc_intermediate, "rb") as f:
+                intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
     
-    if cfgserv.wrprc_intermediate:
-        with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
-
-        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-        payload["certificateChain"].append(base64_intermediate_cert)
+            base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+            payload["certificateChain"].append(base64_intermediate_cert)
+    
+        payload = json.dumps(payload).encode()
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
