@@ -446,7 +446,7 @@ def pid_authorization_get():
         return jsonify({"message": data}),200
             
     
-@rpr.route("/getpidoid4vp", methods=["POST"])
+@rpr.route("/getpidoid4vp", methods=["GET", "POST"])
 def getpidoid4vp():
 
     if "presentation_id" not in request.args:
