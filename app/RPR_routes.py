@@ -2897,7 +2897,7 @@ def intended_use_registration_certificate():
 
     if cfgserv.wrprc_intermediate:
         with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
         base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
         payload["certificateChain"].append(base64_intermediate_cert)
@@ -3599,7 +3599,7 @@ def intended_use_registration_certificate_error():
     
     if cfgserv.wrprc_intermediate:
         with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
 
         base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
         payload["certificateChain"].append(base64_intermediate_cert)
