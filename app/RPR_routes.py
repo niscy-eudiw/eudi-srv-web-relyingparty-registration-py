@@ -3032,13 +3032,6 @@ def intended_use_registration_certificate():
 
     payload = json.dumps(payload).encode()
 
-    if cfgserv.wrprc_intermediate:
-        with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
-
-        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-        payload["certificateChain"].append(base64_intermediate_cert)
-
     headers={
         'Content-Type': 'application/json'
     }
@@ -3121,13 +3114,6 @@ def intended_use_registration_certificate():
         payload["certificateChain"].append(base64_intermediate_cert)
 
     payload = json.dumps(payload).encode()
-
-    if cfgserv.wrprc_intermediate:
-        with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
-
-        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-        payload["certificateChain"].append(base64_intermediate_cert)
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
