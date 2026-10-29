@@ -2006,6 +2006,79 @@ def insert_wrp_intended_use(wrp_id, intended_use_id):
             cursor.close()
             connection.close()
 
+def insert_wrps_atomic(wrps, user_id):
+    connection = conn()
+    if connection is None:
+        raise DatabaseError("Could not connect to the database")
+
+    try:
+        with connection.cursor() as cursor:
+            wrp_ids = []
+
+            for wrp in wrps:
+                cursor.execute(
+                    "INSERT INTO wallet_relying_party (provider_id, trade_name, is_psb, registry_uri, "
+                    "is_intermediary, supervisory_authority_id, user_id) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (wrp["provider_id"], wrp["tradeName"], wrp["isPSB"], wrp["registryURI"],
+                     wrp["isIntermediary"], wrp["supervisoryAuthority"], user_id),
+                )
+                wrp_id = cursor.lastrowid
+
+                for entitlement in wrp["entitlements"]:
+                    cursor.execute(
+                        "INSERT INTO wrp_entitlement (wrp_id, entitlement) VALUES (%s, %s)",
+                        (wrp_id, entitlement),
+                    )
+
+                for intermediary_wrp_id in wrp["usesIntermediary"]:
+                    cursor.execute(
+                        "INSERT INTO wrp_intermediary (wrp_id, intermediary_wrp_id) VALUES (%s, %s)",
+                        (wrp_id, intermediary_wrp_id),
+                    )
+
+                for uri in wrp["supportURI"]:
+                    cursor.execute(
+                        "INSERT INTO wrp_support_uri (wrp_id, uri) VALUES (%s, %s)",
+                        (wrp_id, uri),
+                    )
+
+                for srv_description in wrp["srvDescription"]:
+                    cursor.execute(
+                        "INSERT INTO multilanguage_string (lang, content, user_id) VALUES (%s, %s, %s)",
+                        (srv_description["lang"], srv_description["content"], user_id),
+                    )
+                    cursor.execute(
+                        "INSERT INTO wrp_srv_description (wrp_id, mls_id) VALUES (%s, %s)",
+                        (wrp_id, cursor.lastrowid),
+                    )
+
+                for provided_attestation_id in wrp["providesAttestations_id"]:
+                    cursor.execute(
+                        "INSERT INTO wrp_provided_attestation (wrp_id, provided_attestation_id) VALUES (%s, %s)",
+                        (wrp_id, provided_attestation_id),
+                    )
+
+                for intended_use_id in wrp["intendedUse_ids"]:
+                    cursor.execute(
+                        "INSERT INTO wrp_intended_use (wrp_id, intended_use_id) VALUES (%s, %s)",
+                        (wrp_id, intended_use_id),
+                    )
+
+                wrp_ids.append(wrp_id)
+
+        connection.commit()
+        logger.info(f"Wallet Relying Parties successfully added. IDs: {wrp_ids} - {user_id}")
+        return wrp_ids
+
+    except pymysql.MySQLError as e:
+        connection.rollback()
+        logger.error(f"Error inserting Wallet Relying Parties (rolled back): {e} - {user_id}")
+        raise DatabaseError(str(e)) from e
+
+    finally:
+        connection.close()
+
 def delete_wrp_intended_use(wrp_id, intended_use_ids):
     if not intended_use_ids:
         return 0

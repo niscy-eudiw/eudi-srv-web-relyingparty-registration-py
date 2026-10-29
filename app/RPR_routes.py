@@ -128,6 +128,13 @@ def validate_required_fields(data, required_fields):
 
     return missing
 
+def is_int(value):
+    # bool is a subclass of int, so reject it explicitly
+    return isinstance(value, int) and not isinstance(value, bool)
+
+def is_list_of(value, check):
+    return isinstance(value, list) and all(check(item) for item in value)
+
 def error_response(message, missing_fields=None, code=400):
     return {
         "status": "error",
@@ -1860,11 +1867,12 @@ def create_wrp():
     hash_pid = data.get("hash_pid")
     wrps = data.get("WalletRelyingParty", [])
 
+    if not isinstance(wrps, list) or not all(isinstance(wrp, dict) for wrp in wrps):
+        return error_response("Field 'WalletRelyingParty' must be a non-empty array of objects.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-
-    result = []
 
     #validation
     for wrp in wrps:
@@ -1873,14 +1881,52 @@ def create_wrp():
                                                  "supervisoryAuthority", "registryURI"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
+
+        if not isinstance(wrp["isPSB"], bool):
+            return error_invalid("isPSB must be a boolean.")
+
+        if "isIntermediary" in wrp and not isinstance(wrp["isIntermediary"], bool):
+            return error_invalid("isIntermediary must be a boolean.")
+
+        for field in ("provider_id", "supervisoryAuthority"):
+            if not is_int(wrp[field]):
+                return error_invalid(f"{field} must be an integer.")
+
+        for field in ("intendedUse_ids", "providesAttestations_id", "usesIntermediary"):
+            if not is_list_of(wrp.get(field, []), is_int):
+                return error_invalid(f"{field} must be an array of integers.")
+
+        for field in ("supportURI", "entitlements"):
+            if not is_list_of(wrp[field], lambda value: isinstance(value, str)):
+                return error_invalid(f"{field} must be an array of strings.")
+
+        if not isinstance(wrp["registryURI"], str):
+            return error_invalid("registryURI must be a string.")
+
+        tradeName = wrp.get("tradeName")
+        if tradeName is not None and (not isinstance(tradeName, str) or len(tradeName) > 255):
+            return error_invalid("tradeName must be a string with at most 255 characters.")
+
+        if not is_list_of(wrp["srvDescription"], lambda value: isinstance(value, dict)):
+            return error_invalid("srvDescription must be an array of objects.")
+
+        for srvDescription in wrp["srvDescription"]:
+            missing = validate_required_fields(srvDescription, ["lang", "content"])
+            if missing:
+                return error_response("Missing required fields.", missing)
+
+            if not isinstance(srvDescription["lang"], str) or not isinstance(srvDescription["content"], str):
+                return error_invalid("srvDescription lang and content must be strings.")
+
+            if srvDescription["lang"] not in cfgserv.eu_languages:
+                return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
+
         supervisoryAuthority = wrp.get("supervisoryAuthority")
         usesIntermediarys = wrp.get("usesIntermediary", [])
         providesAttestations_ids = wrp.get("providesAttestations_id", [])
         provider_id = wrp.get("provider_id")
         intendedUse_ids = wrp.get("intendedUse_ids", [])
         entitlements = wrp.get("entitlements", [])
-        srvDescriptions = wrp.get("srvDescription", [])
         
         if user_id != db.check_supervisory_authority(supervisoryAuthority):
             return error_invalid(f"The supervisoryAuthority ID {supervisoryAuthority} does not belong to this user")
@@ -1914,60 +1960,30 @@ def create_wrp():
             if entitlement not in cfgserv.relying_party["Entitlement"]:
                 return error_invalid(f"Invalid entitlement. Must be one of: {', '.join(cfgserv.relying_party['Entitlement'])}")
 
-        for srvDescription in srvDescriptions:
-            missing = validate_required_fields(srvDescription, ["lang"])
-            if missing:
-                return error_response("Missing required fields.", missing)
-            
-            lang = srvDescription.get("lang")
-            if lang not in cfgserv.eu_languages:
-                return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
+    to_insert = [
+        {
+            "provider_id": wrp["provider_id"],
+            "tradeName": wrp.get("tradeName"),
+            "isPSB": wrp["isPSB"],
+            "registryURI": wrp["registryURI"],
+            # A WRP that uses intermediaries cannot itself be an intermediary
+            "isIntermediary": False if wrp.get("usesIntermediary") else wrp.get("isIntermediary", False),
+            "supervisoryAuthority": wrp["supervisoryAuthority"],
+            "entitlements": wrp["entitlements"],
+            "usesIntermediary": wrp.get("usesIntermediary", []),
+            "supportURI": wrp["supportURI"],
+            "srvDescription": wrp["srvDescription"],
+            "providesAttestations_id": wrp.get("providesAttestations_id", []),
+            "intendedUse_ids": wrp.get("intendedUse_ids", []),
+        }
+        for wrp in wrps
+    ]
 
     #insert data base
-    for wrp in wrps:
-        tradeName = wrp.get("tradeName")
-        supportURIs = wrp.get("supportURI", [])
-        srvDescriptions = wrp.get("srvDescription", [])
-        isPSB = wrp.get("isPSB")
-        isIntermediary = wrp.get("isIntermediary", False)
-        entitlements = wrp.get("entitlements", [])
-        usesIntermediarys = wrp.get("usesIntermediary", [])
-        providesAttestations_ids = wrp.get("providesAttestations_id", [])
-        registryURI = wrp.get("registryURI")
-        supervisoryAuthority = wrp.get("supervisoryAuthority")
-        provider_id = wrp.get("provider_id")
-        intendedUse_ids = wrp.get("intendedUse_ids", [])
-
-        if usesIntermediarys:
-            isIntermediary = False
-
-        wrp_id = db.insert_wrp(provider_id, tradeName, isPSB, registryURI, isIntermediary, supervisoryAuthority, user_id)
-        result.append(wrp_id)
-
-        for entitlement in entitlements:
-            db.insert_wrp_entitlement(wrp_id, entitlement)
-
-        if usesIntermediarys:
-            for usesIntermediary in usesIntermediarys:
-                db.insert_wrp_intermediary(wrp_id, usesIntermediary)
-        
-        for supportURI in supportURIs:
-            db.insert_wrp_support_uri(wrp_id, supportURI)
-
-        for srvDescription in srvDescriptions:
-            lang = srvDescription.get("lang")
-            content = srvDescription.get("content")
-
-            mls_id = db.insert_multilanguage_string(lang, content, user_id)
-
-            db.insert_wrp_srv_description(wrp_id, mls_id)
-
-        if providesAttestations_ids:
-            for providesAttestations_id in providesAttestations_ids:
-                db.insert_wrp_provided_attestation(wrp_id, providesAttestations_id)
-
-        for intendedUse_id in intendedUse_ids:
-            db.insert_wrp_intended_use(wrp_id, intendedUse_id)
+    try:
+        result = db.insert_wrps_atomic(to_insert, user_id)
+    except db.DatabaseError:
+        return error_server("Error creating Wallet Relying Party. No data was saved.")
 
     return create_response("Wallet Relying Party created successfully", "wrp ids", result)
 
