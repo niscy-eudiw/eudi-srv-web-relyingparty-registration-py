@@ -1222,100 +1222,112 @@ def remove_provider_policy():
     )
 
 ## -credential
+def error_server(message="Internal server error. Please try again later.", code=500):
+    return {
+        "status": "error",
+        "code": code,
+        "message": message
+    }, code
+
 @rpr.route('/credential/create', methods=['POST'])
 def create_credential():
-
+ 
     data = request.get_json(silent=True)
     if not data:
         return error_response("Invalid or missing JSON body")
-
+ 
     missing = validate_required_fields(data, ["hash_pid", "credentials"])
     if missing:
         return error_response("Missing required fields.", missing)
-
+ 
     hash_pid = data.get("hash_pid")
     credentials = data.get("credentials", [])
-
+ 
+    if not isinstance(credentials, list):
+        return error_response("Field 'credentials' must be an array.")
+ 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
-    result = []
-
+ 
     #verification
     for credential in credentials:
+        if not isinstance(credential, dict):
+            return error_response("Each credential must be an object.")
+ 
         missing = validate_required_fields(credential, ["format", "meta", "claims"])
         if missing:
             return error_response("Missing required fields.", missing)
-
+ 
         if credential["format"] not in cfgserv.formats["SUPPORTED_FORMATS"]:
             return error_invalid(
                 f"Invalid credential format. Must be one of: "
                 f"{', '.join(cfgserv.formats['SUPPORTED_FORMATS'])}"
             )
-        
+ 
         if not isinstance(credential["meta"], dict):
-            return error_response(
-                "Field 'meta' must be an object."
-            )
-        
-        claims = credential.get("claims", [])
-        for claim in claims:
+            return error_response("Field 'meta' must be an object.")
+ 
+        if not isinstance(credential["claims"], list):
+            return error_response("Field 'claims' must be an array.")
+ 
+        for claim in credential["claims"]:
+            if not isinstance(claim, dict):
+                return error_response("Each claim must be an object.")
+ 
             missing = validate_required_fields(claim, ["path"])
             if missing:
                 return error_response("Missing required fields.", missing)
-
+ 
             if not isinstance(claim["path"], list):
-                return error_response(
-                    "Field 'path' must be an array."
-                )
-
+                return error_response("Field 'path' must be an array.")
+ 
             if len(claim["path"]) == 0:
-                return error_response(
-                    "Field 'path' cannot be empty."
-                )
-
-            for elem in claim["path"]:
-                if not isinstance(elem, str):
-                    return error_response(
-                        "Each element in 'path' must be a string."
-                    )
-
-    #insert data base
-    for credential in credentials:
-        format = credential.get("format")
-        meta = serialize_json(credential["meta"])
-        claims = credential.get("claims", [])
-        
-        credential_id = db.insert_credential(format, meta, user_id)
-        result.append(credential_id)
-
-        for claim in claims:
-            path = serialize_json(claim["path"])
-
-            db.insert_claim(credential_id, path)
-    
+                return error_response("Field 'path' cannot be empty.")
+            
+    to_insert = [
+        {
+            "format": credential["format"],
+            "meta": serialize_json(credential["meta"]),
+            "paths": [serialize_json(claim["path"]) for claim in credential["claims"]],
+        }
+        for credential in credentials
+    ]
+ 
+    try:
+        result = db.insert_credentials_with_claims(to_insert, user_id)
+    except db.DuplicateCredentialError:
+        return error_invalid(
+            "A credential with this format already exists for this user.",
+            code=409
+        )
+    except db.DatabaseError:
+        return error_server("Error creating credentials. No data was saved.")
+ 
     return create_response("Credential created successfully", "Credentials ids", result)
 
 @rpr.route('/credential/list', methods=['POST'])
 def list_credential():
     data = request.get_json(silent=True)
-    
+ 
     if not data:
         return error_response("Invalid or missing JSON body")
-
+ 
     missing = validate_required_fields(data, ["hash_pid"])
     if missing:
         return error_response("Missing required fields.", missing)
-
+ 
     hash_pid = data.get("hash_pid")
-    
+ 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
-    result = db.get_credentials(user_id)
-
+ 
+    try:
+        result = db.get_credentials(user_id)
+    except db.DatabaseError:
+        return error_server("Error retrieving credentials.")
+ 
     return list_response("Credentials retrieved successfully.", result, "credential")
 
 ## -intended use
@@ -1477,7 +1489,7 @@ def create_intended_use():
         for credential_id in credential_ids:
             db.insert_intended_use_credential(intended_use_id, credential_id)
     
-    return create_response("Intended Use created successfully", "Credentials ids", result)
+    return create_response("Intended Use created successfully", "Intended Use ids", result)
 
 @rpr.route('/intended_use/list', methods=['POST'])
 def list_intended_use():
@@ -2209,26 +2221,28 @@ def remove_wrp_uses_intermediary():
         "Wallet Relying Party uses Intermediary associations removed successfully",
         deleted_count
     )
-
 @rpr.route('/list_claim', methods=['POST'])
 def list_claim():
     data = request.get_json(silent=True)
-        
+ 
     if not data:
         return error_response("Invalid or missing JSON body")
-
+ 
     missing = validate_required_fields(data, ["hash_pid"])
     if missing:
         return error_response("Missing required fields.", missing)
-    
+ 
     hash_pid = data.get("hash_pid")
-    
+ 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-
-    result = db.get_claim(user_id)
-
+ 
+    try:
+        result = db.get_claim(user_id)
+    except db.DatabaseError:
+        return error_server("Error retrieving claims.")
+ 
     return list_response("Claims retrieved successfully.", result, "claim")
 
 @rpr.route('/list_full_info', methods=['POST'])
@@ -2840,7 +2854,7 @@ def intended_use_registration_certificate():
         })
         
     with open(cfgserv.wrprc_certificate, "rb") as f:
-        cert = x509.load_der_x509_certificate(f.read(), default_backend())
+        cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
 
@@ -2892,7 +2906,7 @@ def intended_use_registration_certificate():
     
     if cfgserv.wrprc_intermediate:
         with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
+            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
         base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
         payload["certificateChain"].append(base64_intermediate_cert)
@@ -2975,7 +2989,7 @@ def intended_use_registration_certificate():
     
     if cfgserv.wrprc_intermediate:
         with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
+            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
         base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
         payload["certificateChain"].append(base64_intermediate_cert)

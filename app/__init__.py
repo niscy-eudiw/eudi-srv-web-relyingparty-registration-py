@@ -88,6 +88,13 @@ def setup_logger():
     formatter = logging.Formatter(log_format)
     log_handler.setFormatter(formatter)
 
+    def add_default_code(record):
+        if not hasattr(record, "code"):
+            record.code = "-"
+        return True
+
+    log_handler.addFilter(add_default_code)
+
     logger.addHandler(log_handler)
 
     return logger
@@ -213,6 +220,7 @@ def create_app():
     app.config['SECRET_KEY'] = ConfService.secret_key
 
     app.register_error_handler(404, page_not_found)
+    app.register_error_handler(500, handle_exception)
     
     from . import (RPR_routes)
     app.register_blueprint(RPR_routes.rpr)
