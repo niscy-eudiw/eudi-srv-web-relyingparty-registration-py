@@ -35,13 +35,14 @@ class DuplicateError(DatabaseError):
     """Duplicate key violation (errno 1062)."""
 
 class InvalidDataError(DatabaseError):
-    """Error caused by the submitted data (NULL, format, length, foreign key)."""
+    """Error caused by the submitted data (NULL, format, length, foreign key, check constraint)."""
 
 class DuplicateCredentialError(DuplicateError):
     """Single-key violation when entering a credential."""
 
 _DUPLICATE_ERRNOS = (1062,)
-_INVALID_DATA_ERRNOS = (1048, 1292, 1366, 1406, 1452)
+# 3819 = CHECK violation on MySQL 8, 4025 = CHECK violation on MariaDB
+_INVALID_DATA_ERRNOS = (1048, 1292, 1366, 1406, 1452, 3819, 4025)
 
 def _map_db_error(e):
     errno = e.args[0] if e.args else None
@@ -50,6 +51,10 @@ def _map_db_error(e):
     if errno in _INVALID_DATA_ERRNOS:
         return InvalidDataError(str(e))
     return DatabaseError(str(e))
+
+@contextmanager
+def transaction():
+    connection = conn()
     if connection is None:
         raise DatabaseError("Could not connect to the database")
 

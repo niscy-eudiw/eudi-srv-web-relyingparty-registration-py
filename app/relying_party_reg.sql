@@ -39,8 +39,8 @@ CREATE TABLE IF NOT EXISTS `law` (
 
 CREATE TABLE IF NOT EXISTS `law_legal_basis` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `law_id` int(11) DEFAULT NULL,
-  `legal_basis` varchar(255) DEFAULT NULL,
+  `law_id` int(11) NOT NULL,
+  `legal_basis` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `law_id` (`law_id`),
   CONSTRAINT `law_legal_basis_ibfk_1` FOREIGN KEY (`law_id`) REFERENCES `law` (`id`)
@@ -59,14 +59,17 @@ CREATE TABLE IF NOT EXISTS `legal_person` (
 CREATE TABLE IF NOT EXISTS `legal_person_law` (
   `legal_person_id` int(11) NOT NULL,
   `law_id` int(11) NOT NULL,
-  PRIMARY KEY (`legal_person_id`,`law_id`)
+  PRIMARY KEY (`legal_person_id`,`law_id`),
+  KEY `law_id` (`law_id`),
+  CONSTRAINT `legal_person_law_ibfk_1` FOREIGN KEY (`legal_person_id`) REFERENCES `legal_person` (`id`),
+  CONSTRAINT `legal_person_law_ibfk_2` FOREIGN KEY (`law_id`) REFERENCES `law` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `legal_person_name` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `legal_person_id` int(11) DEFAULT NULL,
-  `name` varchar(255) DEFAULT NULL,
+  `legal_person_id` int(11) NOT NULL,
+  `name` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `legal_person_id` (`legal_person_id`),
   CONSTRAINT `legal_person_name_ibfk_1` FOREIGN KEY (`legal_person_id`) REFERENCES `legal_person` (`id`)
@@ -109,14 +112,15 @@ CREATE TABLE IF NOT EXISTS `legal_entity` (
   KEY `user_id` (`user_id`),
   CONSTRAINT `legal_entity_ibfk_1` FOREIGN KEY (`legal_person_id`) REFERENCES `legal_person` (`id`),
   CONSTRAINT `legal_entity_ibfk_2` FOREIGN KEY (`natural_person_id`) REFERENCES `natural_person` (`id`),
-  CONSTRAINT `legal_entity_ibfk_3` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`)
+  CONSTRAINT `legal_entity_ibfk_3` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`),
+  CONSTRAINT `legal_entity_chk_1` CHECK ((`legal_person_id` IS NULL) <> (`natural_person_id` IS NULL))
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `legal_entity_identifier` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `legal_entity_id` int(11) DEFAULT NULL,
-  `identifier_id` int(11) DEFAULT NULL,
+  `legal_entity_id` int(11) NOT NULL,
+  `identifier_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `legal_entity_id` (`legal_entity_id`),
   KEY `identifier_id` (`identifier_id`),
@@ -127,8 +131,8 @@ CREATE TABLE IF NOT EXISTS `legal_entity_identifier` (
 
 CREATE TABLE IF NOT EXISTS `legal_entity_email` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `legal_entity_id` int(11) DEFAULT NULL,
-  `email` varchar(255) DEFAULT NULL,
+  `legal_entity_id` int(11) NOT NULL,
+  `email` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `legal_entity_id` (`legal_entity_id`),
   CONSTRAINT `legal_entity_email_ibfk_1` FOREIGN KEY (`legal_entity_id`) REFERENCES `legal_entity` (`id`)
@@ -137,8 +141,8 @@ CREATE TABLE IF NOT EXISTS `legal_entity_email` (
 
 CREATE TABLE IF NOT EXISTS `legal_entity_info_uri` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `legal_entity_id` int(11) DEFAULT NULL,
-  `uri` text DEFAULT NULL,
+  `legal_entity_id` int(11) NOT NULL,
+  `uri` text NOT NULL,
   PRIMARY KEY (`id`),
   KEY `legal_entity_id` (`legal_entity_id`),
   CONSTRAINT `legal_entity_info_uri_ibfk_1` FOREIGN KEY (`legal_entity_id`) REFERENCES `legal_entity` (`id`)
@@ -147,8 +151,8 @@ CREATE TABLE IF NOT EXISTS `legal_entity_info_uri` (
 
 CREATE TABLE IF NOT EXISTS `legal_entity_phone` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `legal_entity_id` int(11) DEFAULT NULL,
-  `phone` varchar(50) DEFAULT NULL,
+  `legal_entity_id` int(11) NOT NULL,
+  `phone` varchar(50) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `legal_entity_id` (`legal_entity_id`),
   CONSTRAINT `legal_entity_phone_ibfk_1` FOREIGN KEY (`legal_entity_id`) REFERENCES `legal_entity` (`id`)
@@ -157,8 +161,8 @@ CREATE TABLE IF NOT EXISTS `legal_entity_phone` (
 
 CREATE TABLE IF NOT EXISTS `legal_entity_postal_address` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `legal_entity_id` int(11) DEFAULT NULL,
-  `address` varchar(255) DEFAULT NULL,
+  `legal_entity_id` int(11) NOT NULL,
+  `address` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `legal_entity_id` (`legal_entity_id`),
   CONSTRAINT `legal_entity_postal_address_ibfk_1` FOREIGN KEY (`legal_entity_id`) REFERENCES `legal_entity` (`id`)
@@ -180,8 +184,8 @@ CREATE TABLE IF NOT EXISTS `provider` (
 
 CREATE TABLE IF NOT EXISTS `provider_x5c` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `provider_id` int(11) DEFAULT NULL,
-  `certificate` text DEFAULT NULL,
+  `provider_id` int(11) NOT NULL,
+  `certificate` text NOT NULL,
   PRIMARY KEY (`id`),
   KEY `provider_id` (`provider_id`),
   CONSTRAINT `provider_x5c_ibfk_1` FOREIGN KEY (`provider_id`) REFERENCES `provider` (`id`)
@@ -190,8 +194,8 @@ CREATE TABLE IF NOT EXISTS `provider_x5c` (
 
 CREATE TABLE IF NOT EXISTS `policy` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `policy_uri` text DEFAULT NULL,
-  `type` varchar(100) DEFAULT NULL,
+  `policy_uri` text NOT NULL,
+  `type` varchar(100) NOT NULL,
   `user_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
@@ -201,8 +205,8 @@ CREATE TABLE IF NOT EXISTS `policy` (
 
 CREATE TABLE IF NOT EXISTS `provider_policy` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `provider_id` int(11) DEFAULT NULL,
-  `policy_id` int(11) DEFAULT NULL,
+  `provider_id` int(11) NOT NULL,
+  `policy_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `provider_id` (`provider_id`),
   KEY `policy_id` (`policy_id`),
@@ -225,7 +229,7 @@ CREATE TABLE IF NOT EXISTS `credential` (
 CREATE TABLE IF NOT EXISTS `claim` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `credential_id` int(11) NOT NULL,
-  `path` longtext DEFAULT NULL,
+  `path` longtext NOT NULL,
   PRIMARY KEY (`id`),
   KEY `FK_claim_credential` (`credential_id`),
   CONSTRAINT `FK_claim_credential` FOREIGN KEY (`credential_id`) REFERENCES `credential` (`id`)
@@ -256,8 +260,8 @@ CREATE TABLE IF NOT EXISTS `intended_use_credential` (
 
 CREATE TABLE IF NOT EXISTS `intended_use_policy` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `intended_use_id` int(11) DEFAULT NULL,
-  `policy_id` int(11) DEFAULT NULL,
+  `intended_use_id` int(11) NOT NULL,
+  `policy_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `intended_use_id` (`intended_use_id`),
   KEY `policy_id` (`policy_id`),
@@ -268,8 +272,8 @@ CREATE TABLE IF NOT EXISTS `intended_use_policy` (
 
 CREATE TABLE IF NOT EXISTS `multilanguage_string` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `lang` varchar(10) DEFAULT NULL,
-  `content` text DEFAULT NULL,
+  `lang` varchar(10) NOT NULL,
+  `content` text NOT NULL,
   `user_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
@@ -279,8 +283,8 @@ CREATE TABLE IF NOT EXISTS `multilanguage_string` (
 
 CREATE TABLE IF NOT EXISTS `intended_use_purpose` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `intended_use_id` int(11) DEFAULT NULL,
-  `mls_id` int(11) DEFAULT NULL,
+  `intended_use_id` int(11) NOT NULL,
+  `mls_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `intended_use_id` (`intended_use_id`),
   KEY `mls_id` (`mls_id`),
@@ -302,9 +306,9 @@ CREATE TABLE IF NOT EXISTS `provided_attestation` (
 
 CREATE TABLE IF NOT EXISTS `supervisory_authority` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) DEFAULT NULL,
-  `country` varchar(10) DEFAULT NULL,
-  `user_id` int(11) DEFAULT NULL,
+  `name` varchar(255) NOT NULL,
+  `country` varchar(10) NOT NULL,
+  `user_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `supervisory_authority_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`)
@@ -313,8 +317,8 @@ CREATE TABLE IF NOT EXISTS `supervisory_authority` (
 
 CREATE TABLE IF NOT EXISTS `supervisory_authority_email` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `authority_id` int(11) DEFAULT NULL,
-  `email` varchar(255) DEFAULT NULL,
+  `authority_id` int(11) NOT NULL,
+  `email` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `authority_id` (`authority_id`),
   CONSTRAINT `supervisory_authority_email_ibfk_1` FOREIGN KEY (`authority_id`) REFERENCES `supervisory_authority` (`id`)
@@ -323,8 +327,8 @@ CREATE TABLE IF NOT EXISTS `supervisory_authority_email` (
 
 CREATE TABLE IF NOT EXISTS `supervisory_authority_formuri` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `authority_id` int(11) DEFAULT NULL,
-  `formURI` varchar(255) DEFAULT NULL,
+  `authority_id` int(11) NOT NULL,
+  `formURI` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `authority_id` (`authority_id`),
   CONSTRAINT `supervisory_authority_formuri_ibfk_1` FOREIGN KEY (`authority_id`) REFERENCES `supervisory_authority` (`id`)
@@ -333,8 +337,8 @@ CREATE TABLE IF NOT EXISTS `supervisory_authority_formuri` (
 
 CREATE TABLE IF NOT EXISTS `supervisory_authority_phone` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `authority_id` int(11) DEFAULT NULL,
-  `phone` varchar(255) DEFAULT NULL,
+  `authority_id` int(11) NOT NULL,
+  `phone` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `authority_id` (`authority_id`),
   CONSTRAINT `supervisory_authority_phone_ibfk_1` FOREIGN KEY (`authority_id`) REFERENCES `supervisory_authority` (`id`)
@@ -348,7 +352,7 @@ CREATE TABLE IF NOT EXISTS `wallet_relying_party` (
   `is_psb` tinyint(1) NOT NULL,
   `registry_uri` text NOT NULL,
   `is_intermediary` tinyint(1) NOT NULL,
-  `supervisory_authority_id` int(11) DEFAULT NULL,
+  `supervisory_authority_id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `provider_id` (`provider_id`),
@@ -362,8 +366,8 @@ CREATE TABLE IF NOT EXISTS `wallet_relying_party` (
 
 CREATE TABLE IF NOT EXISTS `wrp_entitlement` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) DEFAULT NULL,
-  `entitlement` text DEFAULT NULL,
+  `wrp_id` int(11) NOT NULL,
+  `entitlement` text NOT NULL,
   PRIMARY KEY (`id`),
   KEY `wrp_id` (`wrp_id`),
   CONSTRAINT `wrp_entitlement_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`)
@@ -382,8 +386,8 @@ CREATE TABLE IF NOT EXISTS `wrp_intended_use` (
 
 CREATE TABLE IF NOT EXISTS `wrp_intermediary` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) DEFAULT NULL,
-  `intermediary_wrp_id` int(11) DEFAULT NULL,
+  `wrp_id` int(11) NOT NULL,
+  `intermediary_wrp_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `wrp_id` (`wrp_id`),
   KEY `intermediary_wrp_id` (`intermediary_wrp_id`),
@@ -395,14 +399,17 @@ CREATE TABLE IF NOT EXISTS `wrp_intermediary` (
 CREATE TABLE IF NOT EXISTS `wrp_provided_attestation` (
   `wrp_id` int(11) NOT NULL,
   `provided_attestation_id` int(11) NOT NULL,
-  PRIMARY KEY (`wrp_id`,`provided_attestation_id`)
+  PRIMARY KEY (`wrp_id`,`provided_attestation_id`),
+  KEY `provided_attestation_id` (`provided_attestation_id`),
+  CONSTRAINT `wrp_provided_attestation_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`),
+  CONSTRAINT `wrp_provided_attestation_ibfk_2` FOREIGN KEY (`provided_attestation_id`) REFERENCES `provided_attestation` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `wrp_srv_description` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) DEFAULT NULL,
-  `mls_id` int(11) DEFAULT NULL,
+  `wrp_id` int(11) NOT NULL,
+  `mls_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `wrp_id` (`wrp_id`),
   KEY `mls_id` (`mls_id`),
@@ -413,8 +420,8 @@ CREATE TABLE IF NOT EXISTS `wrp_srv_description` (
 
 CREATE TABLE IF NOT EXISTS `wrp_support_uri` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) DEFAULT NULL,
-  `uri` text DEFAULT NULL,
+  `wrp_id` int(11) NOT NULL,
+  `uri` text NOT NULL,
   PRIMARY KEY (`id`),
   KEY `wrp_id` (`wrp_id`),
   CONSTRAINT `wrp_support_uri_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`)
@@ -454,10 +461,3 @@ CREATE TABLE IF NOT EXISTS `registration_certificate` (
   CONSTRAINT `fk_registration_certificate_intended_use` FOREIGN KEY (`intended_use_id`) REFERENCES `intended_use` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_registration_certificate_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
-/*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
-/*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
-/*!40014 SET FOREIGN_KEY_CHECKS=IFNULL(@OLD_FOREIGN_KEY_CHECKS, 1) */;
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40111 SET SQL_NOTES=IFNULL(@OLD_SQL_NOTES, 1) */;

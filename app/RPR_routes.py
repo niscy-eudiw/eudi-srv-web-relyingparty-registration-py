@@ -132,8 +132,14 @@ def is_int(value):
     # bool is a subclass of int, so reject it explicitly
     return isinstance(value, int) and not isinstance(value, bool)
 
+def is_id(value):
+    return is_int(value) and value > 0
+
 def is_str(value):
     return isinstance(value, str)
+
+def is_non_blank_str(value):
+    return isinstance(value, str) and value.strip() != ""
 
 def is_list_of(value, check):
     return isinstance(value, list) and all(check(item) for item in value)
@@ -432,8 +438,10 @@ def create_law():
         if error:
             return error
 
-        if not is_list_of(law.get("legalBasis") or [], is_str):
-            return error_invalid("Field 'legalBasis' must be an array of strings.")
+        if not is_list_of(law.get("legalBasis") or [], is_non_blank_str):
+            return error_invalid("Field 'legalBasis' must be an array of non-empty strings.")
+
+        law["legalBasis"] = [value.strip() for value in law.get("legalBasis") or []]
 
     try:
         with db.transaction() as cursor:
@@ -445,8 +453,7 @@ def create_law():
                 result.append(law_id)
 
                 for aux in legalBasis:
-                    if aux:
-                        db.insert_law_legal_basis(law_id, aux, cursor=cursor)
+                    db.insert_law_legal_basis(law_id, aux, cursor=cursor)
     except db.DatabaseError as e:
         return db_write_error(e)
 
@@ -552,15 +559,14 @@ def create_legal_person():
 
         laws = legalPerson.get("law") or []
 
-        if not is_list_of(laws, is_int):
-            return error_invalid("Field 'law' must be an array of integers.")
+        if not is_list_of(laws, is_id):
+            return error_invalid("Field 'law' must be an array of positive integers.")
 
         for law in laws:
-            if law:
-                if user_id != db.check_law(law):
-                    return error_invalid(
-                        f"law id {law} doesn't belong to this user"
-                    )
+            if user_id != db.check_law(law):
+                return error_invalid(
+                    f"law id {law} doesn't belong to this user"
+                )
 
         to_insert.append({"legalNames": clean_legal_names, "laws": laws})
 
@@ -575,8 +581,7 @@ def create_legal_person():
                     db.insert_legal_person_name(legal_person_id, legalName, cursor=cursor)
 
                 for law in legalPerson["laws"]:
-                    if law:
-                        db.associate_legal_person_law(legal_person_id, law, cursor=cursor)
+                    db.associate_legal_person_law(legal_person_id, law, cursor=cursor)
     except db.DatabaseError as e:
         return db_write_error(e)
 
@@ -868,12 +873,18 @@ def create_legal_entity():
         if error:
             return error
 
-        if not is_list_of(aux["identifiers"], is_int):
-            return error_invalid("Field 'identifiers' must be an array of integers.")
+        for field in ("legal_person_id", "natural_person_id"):
+            if aux.get(field) is not None and not is_id(aux[field]):
+                return error_invalid(f"Field '{field}' must be a positive integer.")
+
+        if not is_list_of(aux["identifiers"], is_id):
+            return error_invalid("Field 'identifiers' must be an array of positive integers.")
 
         for field in ("postalAddress", "email", "phone", "infoURI"):
-            if not is_list_of(aux.get(field) or [], is_str):
-                return error_invalid(f"Field '{field}' must be an array of strings.")
+            if not is_list_of(aux.get(field) or [], is_non_blank_str):
+                return error_invalid(f"Field '{field}' must be an array of non-empty strings.")
+
+            aux[field] = [value.strip() for value in aux.get(field) or []]
 
         legal_person_id = aux.get("legal_person_id")
         natural_person_id = aux.get("natural_person_id")
@@ -1177,11 +1188,13 @@ def create_provider():
         if error:
             return error
 
-        if not is_list_of(provider["policy_id"], is_int):
-            return error_invalid("Field 'policy_id' must be an array of integers.")
+        if not is_list_of(provider["policy_id"], is_id):
+            return error_invalid("Field 'policy_id' must be an array of positive integers.")
 
-        if not is_list_of(provider.get("x5c") or [], is_str):
-            return error_invalid("Field 'x5c' must be an array of strings.")
+        if not is_list_of(provider.get("x5c") or [], is_non_blank_str):
+            return error_invalid("Field 'x5c' must be an array of non-empty strings.")
+
+        provider["x5c"] = [value.strip() for value in provider.get("x5c") or []]
 
         policy_ids = provider["policy_id"]
         for policy_id in policy_ids:
@@ -1197,8 +1210,8 @@ def create_provider():
 
         legalEntityId = provider.get("legalEntityId")
         
-        if not isinstance(legalEntityId, int) or isinstance(legalEntityId, bool):
-            return error_invalid("legalEntityId must be an integer.")
+        if not is_id(legalEntityId):
+            return error_invalid("Field 'legalEntityId' must be a positive integer.")
 
         if user_id != db.check_legal_entity(legalEntityId):
             return error_invalid(
@@ -1221,8 +1234,7 @@ def create_provider():
                     db.insert_provider_policy(provider_id, policy_id, cursor=cursor)
 
                 for cert in x5c:
-                    if cert:
-                        db.insert_provider_x5c(provider_id, cert, cursor=cursor)
+                    db.insert_provider_x5c(provider_id, cert, cursor=cursor)
     except db.DatabaseError as e:
         return db_write_error(e)
 
@@ -1526,8 +1538,8 @@ def create_intended_use():
             return error
 
         for field in ("privacyPolicy_id", "credential_ids"):
-            if not is_list_of(intended_use[field], is_int):
-                return error_invalid(f"Field '{field}' must be an array of integers.")
+            if not is_list_of(intended_use[field], is_id):
+                return error_invalid(f"Field '{field}' must be an array of positive integers.")
 
         created_at = intended_use.get("createdAt")
         revoked_at = intended_use.get("revokedAt")
@@ -1972,8 +1984,10 @@ def create_supervisory_authority():
             return error
 
         for field in ("email", "formURI", "phone"):
-            if not is_list_of(aux.get(field) or [], is_str):
-                return error_invalid(f"Field '{field}' must be an array of strings.")
+            if not is_list_of(aux.get(field) or [], is_non_blank_str):
+                return error_invalid(f"Field '{field}' must be an array of non-empty strings.")
+
+            aux[field] = [value.strip() for value in aux.get(field) or []]
 
         emails = aux.get("email") or []
         formuris = aux.get("formURI") or []
@@ -2072,16 +2086,20 @@ def create_wrp():
             return error_invalid("isIntermediary must be a boolean.")
 
         for field in ("provider_id", "supervisoryAuthority"):
-            if not is_int(wrp[field]):
-                return error_invalid(f"{field} must be an integer.")
+            if not is_id(wrp[field]):
+                return error_invalid(f"{field} must be a positive integer.")
 
         for field in ("intendedUse_ids", "providesAttestations_id", "usesIntermediary"):
-            if not is_list_of(wrp.get(field) or [], is_int):
-                return error_invalid(f"{field} must be an array of integers.")
+            if not is_list_of(wrp.get(field) or [], is_id):
+                return error_invalid(f"{field} must be an array of positive integers.")
 
-        for field in ("supportURI", "entitlements"):
-            if not is_list_of(wrp[field], lambda value: isinstance(value, str)):
-                return error_invalid(f"{field} must be an array of strings.")
+        if not is_list_of(wrp["supportURI"], is_non_blank_str):
+            return error_invalid("supportURI must be an array of non-empty strings.")
+
+        wrp["supportURI"] = [value.strip() for value in wrp["supportURI"]]
+
+        if not is_list_of(wrp["entitlements"], is_str):
+            return error_invalid("entitlements must be an array of strings.")
 
         if not isinstance(wrp["registryURI"], str):
             return error_invalid("registryURI must be a string.")
