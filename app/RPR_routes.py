@@ -132,8 +132,23 @@ def is_int(value):
     # bool is a subclass of int, so reject it explicitly
     return isinstance(value, int) and not isinstance(value, bool)
 
+def is_str(value):
+    return isinstance(value, str)
+
 def is_list_of(value, check):
     return isinstance(value, list) and all(check(item) for item in value)
+
+TYPE_NAMES = {str: "a string", int: "an integer", bool: "a boolean", list: "an array", dict: "an object"}
+
+def check_field_types(item, types):
+    for field, expected in types.items():
+        value = item.get(field)
+        if value is None:
+            continue
+        valid = is_int(value) if expected is int else isinstance(value, expected)
+        if not valid:
+            return error_invalid(f"Field '{field}' must be {TYPE_NAMES[expected]}.")
+    return None
 
 def error_response(message, missing_fields=None, code=400):
     return {
@@ -396,29 +411,46 @@ def create_law():
     hash_pid = data.get("hash_pid")
     laws = data.get("law", [])
 
+    if not isinstance(laws, list):
+        return error_invalid("Field 'law' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
-    for law in laws: 
+    for law in laws:
+        if not isinstance(law, dict):
+            return error_invalid("Each law must be an object.")
+
         missing = validate_required_fields(law, ["legislativeIdentifier"])
         if missing:
             return error_response("Missing required fields.", missing)
-    
-    for law in laws:
-        legislativeIdentifier = law.get("legislativeIdentifier")
-        legalBasis = law.get("legalBasis", [])
 
-        law_id = db.insert_law(legislativeIdentifier, user_id)
-        result.append(law_id)
+        error = check_field_types(law, {"legislativeIdentifier": str})
+        if error:
+            return error
 
-        for aux in legalBasis:
-            if aux:
-                db.insert_law_legal_basis(law_id, aux)
+        if not is_list_of(law.get("legalBasis") or [], is_str):
+            return error_invalid("Field 'legalBasis' must be an array of strings.")
 
-    return create_response("Law created successfully", "Law new ids:", result)
+    try:
+        with db.transaction() as cursor:
+            for law in laws:
+                legislativeIdentifier = law.get("legislativeIdentifier")
+                legalBasis = law.get("legalBasis") or []
+
+                law_id = db.insert_law(legislativeIdentifier, user_id, cursor=cursor)
+                result.append(law_id)
+
+                for aux in legalBasis:
+                    if aux:
+                        db.insert_law_legal_basis(law_id, aux, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Law created successfully", "Law ids", result)
 
 @rpr.route('/law/list', methods=['POST'])
 def list_law():
@@ -458,11 +490,16 @@ def create_legal_person():
     hash_pid = data.get("hash_pid")
     legalPersons = data.get("legalPerson", [])
 
+    if not isinstance(legalPersons, list):
+        return error_invalid("Field 'legalPerson' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
     
     result = []
+
+    to_insert = []
 
     #verification
     for legalPerson in legalPersons:
@@ -513,7 +550,10 @@ def create_legal_person():
 
             clean_legal_names.append(legal_name)
 
-        laws = legalPerson.get("law", [])
+        laws = legalPerson.get("law") or []
+
+        if not is_list_of(laws, is_int):
+            return error_invalid("Field 'law' must be an array of integers.")
 
         for law in laws:
             if law:
@@ -521,23 +561,26 @@ def create_legal_person():
                     return error_invalid(
                         f"law id {law} doesn't belong to this user"
                     )
-                
+
+        to_insert.append({"legalNames": clean_legal_names, "laws": laws})
+
     #inserts data base
-    for legalPerson in legalPersons:
-        legalNames = legalPerson.get("legalName", [])
-        laws = legalPerson.get("law", [])
+    try:
+        with db.transaction() as cursor:
+            for legalPerson in to_insert:
+                legal_person_id = db.insert_legal_person(user_id, cursor=cursor)
+                result.append(legal_person_id)
 
-        legal_person_id = db.insert_legal_person(user_id)
-        result.append(legal_person_id)
-        
-        for legalName in legalNames:
-            db.insert_legal_person_name(legal_person_id, legalName)
-        
-        for law in laws:
-            if law:
-                db.associate_legal_person_law(legal_person_id, law)
+                for legalName in legalPerson["legalNames"]:
+                    db.insert_legal_person_name(legal_person_id, legalName, cursor=cursor)
 
-    return create_response("Legal Person created successfully", "Legal person new ids:", result)
+                for law in legalPerson["laws"]:
+                    if law:
+                        db.associate_legal_person_law(legal_person_id, law, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Legal Person created successfully", "Legal Person ids", result)
 
 @rpr.route('/legal_person/list', methods=['POST'])
 def list_legal_person():
@@ -646,29 +689,46 @@ def create_natural_person():
     hash_pid = data.get("hash_pid")
     naturalPersons = data.get("naturalPerson", [])
 
+    if not isinstance(naturalPersons, list):
+        return error_invalid("Field 'naturalPerson' must be an array.")
+
     user_id = db.check_user(hash_pid)
     result = []
 
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     #verification
     for naturalPerson in naturalPersons:
+        if not isinstance(naturalPerson, dict):
+            return error_invalid("Each naturalPerson must be an object.")
+
         missing = validate_required_fields(naturalPerson, ["familyName", "givenName"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
-    #insert data base    
-    for naturalPerson in naturalPersons:
-        family_name = naturalPerson.get("familyName")
-        given_name = naturalPerson.get("givenName")
-        date_of_birth = naturalPerson.get("dateOfBirth")
-        place_of_birth = naturalPerson.get("placeOfBirth")
 
-        natural_person_id = db.insert_natural_person(family_name, given_name, date_of_birth, place_of_birth, user_id)
-        result.append(natural_person_id)
+        error = check_field_types(
+            naturalPerson,
+            {"familyName": str, "givenName": str, "dateOfBirth": str, "placeOfBirth": str}
+        )
+        if error:
+            return error
 
-    return create_response("Natural Person created successfully", "Natural person new ids", result)
+    #insert data base
+    try:
+        with db.transaction() as cursor:
+            for naturalPerson in naturalPersons:
+                family_name = naturalPerson.get("familyName")
+                given_name = naturalPerson.get("givenName")
+                date_of_birth = naturalPerson.get("dateOfBirth")
+                place_of_birth = naturalPerson.get("placeOfBirth")
+
+                natural_person_id = db.insert_natural_person(family_name, given_name, date_of_birth, place_of_birth, user_id, cursor=cursor)
+                result.append(natural_person_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Natural Person created successfully", "Natural Person ids", result)
 
 @rpr.route('/natural_person/list', methods=['POST'])
 def get_natural_person():
@@ -708,31 +768,45 @@ def create_identifier():
     hash_pid = data.get("hash_pid")
     identifiers = data.get("identifier", [])
 
+    if not isinstance(identifiers, list):
+        return error_invalid("Field 'identifier' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #verification
     for identifier in identifiers:
+        if not isinstance(identifier, dict):
+            return error_invalid("Each identifier must be an object.")
+
         missing = validate_required_fields(identifier, ["identifier", "type"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
+
+        error = check_field_types(identifier, {"identifier": str, "type": str})
+        if error:
+            return error
+
         type = identifier.get("type")
         if type not in cfgserv.legal_entity_type_identifier["Type of Identifier"]:
             return error_invalid(f"Invalid type_of_identifier. Must be one of: {', '.join(cfgserv.legal_entity_type_identifier['Type of Identifier'])}")
 
     #insert data base
-    for identifier in identifiers:
-        identifier_value = identifier.get("identifier")
-        type = identifier.get("type")
+    try:
+        with db.transaction() as cursor:
+            for identifier in identifiers:
+                identifier_value = identifier.get("identifier")
+                type = identifier.get("type")
 
-        identifier_id = db.insert_identifier(identifier_value, type, user_id)
-        result.append(identifier_id)
+                identifier_id = db.insert_identifier(identifier_value, type, user_id, cursor=cursor)
+                result.append(identifier_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-    return create_response("Identifier created successfully", "Identifiers new ids", result)
+    return create_response("Identifier created successfully", "Identifier ids", result)
 
 @rpr.route('/identifier/list', methods=['POST'])
 def list_identifier():
@@ -772,21 +846,38 @@ def create_legal_entity():
     hash_pid = data.get("hash_pid")
     legal_entity = data.get("legal_entity")
 
+    if not isinstance(legal_entity, list):
+        return error_invalid("Field 'legal_entity' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #verification
     for aux in legal_entity:
+        if not isinstance(aux, dict):
+            return error_invalid("Each legal_entity must be an object.")
+
         missing = validate_required_fields(aux, ["identifiers", "country"])
         if missing:
             return error_response("Missing required fields.", missing)
 
+        error = check_field_types(aux, {"legal_person_id": int, "natural_person_id": int, "country": str})
+        if error:
+            return error
+
+        if not is_list_of(aux["identifiers"], is_int):
+            return error_invalid("Field 'identifiers' must be an array of integers.")
+
+        for field in ("postalAddress", "email", "phone", "infoURI"):
+            if not is_list_of(aux.get(field) or [], is_str):
+                return error_invalid(f"Field '{field}' must be an array of strings.")
+
         legal_person_id = aux.get("legal_person_id")
         natural_person_id = aux.get("natural_person_id")
-        identifier_ids = aux.get("identifiers", [])
+        identifier_ids = aux["identifiers"]
         country = aux.get("country")
 
         if legal_person_id and natural_person_id:
@@ -810,39 +901,39 @@ def create_legal_entity():
                 return error_invalid(f"The identifier ID {identifier_id} does not belong to this user")
 
     #insert data base
-    for aux in legal_entity:
-        identifier_ids = aux.get("identifiers", [])
-        postalAddress = aux.get("postalAddress", [])
-        country = aux.get("country")
-        emails = aux.get("email", [])
-        phones = aux.get("phone", [])
-        infoURIs = aux.get("infoURI", [])
-        legal_person_id = aux.get("legal_person_id")
-        natural_person_id = aux.get("natural_person_id")
+    try:
+        with db.transaction() as cursor:
+            for aux in legal_entity:
+                identifier_ids = aux["identifiers"]
+                postalAddress = aux.get("postalAddress") or []
+                country = aux.get("country")
+                emails = aux.get("email") or []
+                phones = aux.get("phone") or []
+                infoURIs = aux.get("infoURI") or []
+                legal_person_id = aux.get("legal_person_id")
+                natural_person_id = aux.get("natural_person_id")
 
-        legal_entity_id = db.insert_legal_entity(legal_person_id, natural_person_id, country, user_id)
-        result.append(legal_entity_id)
+                legal_entity_id = db.insert_legal_entity(legal_person_id, natural_person_id, country, user_id, cursor=cursor)
+                result.append(legal_entity_id)
 
-        for identifier_id in identifier_ids:
-            db.insert_legal_entity_identifier(legal_entity_id, identifier_id)
+                for identifier_id in identifier_ids:
+                    db.insert_legal_entity_identifier(legal_entity_id, identifier_id, cursor=cursor)
 
-        if postalAddress:
-            for aux in postalAddress:
-                db.insert_legal_entity_postal_address(legal_entity_id, aux)
-        
-        if emails:
-            for email in emails:
-                db.insert_legal_entity_email(legal_entity_id, email)
-        
-        if phones:
-            for phone in phones:
-                db.insert_legal_entity_phone(legal_entity_id, phone)
+                for address in postalAddress:
+                    db.insert_legal_entity_postal_address(legal_entity_id, address, cursor=cursor)
 
-        if  infoURIs:
-            for infoURI in infoURIs:
-                db.insert_legal_entity_info_uri(legal_entity_id, infoURI)
+                for email in emails:
+                    db.insert_legal_entity_email(legal_entity_id, email, cursor=cursor)
 
-    return create_response("Legal Entity created successfully.", "legal Entity id:", result)
+                for phone in phones:
+                    db.insert_legal_entity_phone(legal_entity_id, phone, cursor=cursor)
+
+                for infoURI in infoURIs:
+                    db.insert_legal_entity_info_uri(legal_entity_id, infoURI, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Legal Entity created successfully.", "Legal Entity ids", result)
 
 @rpr.route('/legal_entity/list', methods=['POST'])
 def list_legal_entity():
@@ -977,17 +1068,27 @@ def create_policy():
     hash_pid = data.get("hash_pid")
     policies = data.get("policy", [])
 
+    if not isinstance(policies, list):
+        return error_invalid("Field 'policy' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #verification
     for policy in policies:
+        if not isinstance(policy, dict):
+            return error_invalid("Each policy must be an object.")
+
         missing = validate_required_fields(policy, ["policyURI", "type", "intention"])
         if missing:
             return error_response("Missing required fields.", missing)
+
+        error = check_field_types(policy, {"policyURI": str, "type": str, "intention": str})
+        if error:
+            return error
 
         type = policy.get("type")
         intention = policy.get("intention")
@@ -1004,14 +1105,18 @@ def create_policy():
                 return error_invalid(f"Invalid 'intended_use' type_policy. Must be one of: {', '.join(cfgserv.intended_use['Type of Privacy Policy'])}")
 
     #insert data base
-    for policy in policies:
-        policyURI = policy.get("policyURI")
-        type = policy.get("type")
+    try:
+        with db.transaction() as cursor:
+            for policy in policies:
+                policyURI = policy.get("policyURI")
+                type = policy.get("type")
 
-        policy_id = db.insert_policy(policyURI, type, user_id)
-        result.append(policy_id)
+                policy_id = db.insert_policy(policyURI, type, user_id, cursor=cursor)
+                result.append(policy_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-    return create_response("Policy created successfully", "Policies IDs:", result)
+    return create_response("Policy created successfully", "Policy ids", result)
 
 @rpr.route('/policy/list', methods=['POST'])
 def list_policy():
@@ -1032,7 +1137,7 @@ def list_policy():
 
     result = db.get_policy(user_id)
 
-    return create_response("Policies retrieved successfully.", "policy", result)
+    return list_response("Policies retrieved successfully.", result, "policy")
 
 ## -provider
 @rpr.route('/provider/create', methods=['POST'])
@@ -1068,11 +1173,21 @@ def create_provider():
         if missing:
             return error_response("Missing required fields.", missing)
 
-        policy_ids = provider.get("policy_id", [])
+        error = check_field_types(provider, {"providerType": str})
+        if error:
+            return error
+
+        if not is_list_of(provider["policy_id"], is_int):
+            return error_invalid("Field 'policy_id' must be an array of integers.")
+
+        if not is_list_of(provider.get("x5c") or [], is_str):
+            return error_invalid("Field 'x5c' must be an array of strings.")
+
+        policy_ids = provider["policy_id"]
         for policy_id in policy_ids:
             row = db.check_policy(policy_id)
 
-            if not row:
+            if not row or row[0] is None:
                 return error_invalid(f"Policy {policy_id} not found")
             if user_id[0] != row[0]:
                 return error_invalid(f"The Policy ID {policy_id} does not belong to this user")
@@ -1091,23 +1206,27 @@ def create_provider():
             )
             
     #insert data base
-    for provider in providers:
-        legalEntityId = provider.get("legalEntityId")
-        providerType = provider.get("providerType")
-        x5c = provider.get("x5c", [])
-        policy_ids = provider.get("policy_id", [])
+    try:
+        with db.transaction() as cursor:
+            for provider in providers:
+                legalEntityId = provider.get("legalEntityId")
+                providerType = provider.get("providerType")
+                x5c = provider.get("x5c") or []
+                policy_ids = provider["policy_id"]
 
-        provider_id = db.insert_provider(legalEntityId, providerType, user_id)
-        result.append(provider_id)
+                provider_id = db.insert_provider(legalEntityId, providerType, user_id, cursor=cursor)
+                result.append(provider_id)
 
-        for policy_id in policy_ids:
-            db.insert_provider_policy(provider_id, policy_id)
+                for policy_id in policy_ids:
+                    db.insert_provider_policy(provider_id, policy_id, cursor=cursor)
 
-        for cert in x5c:
-            if cert:
-                db.insert_provider_x5c(provider_id, cert)
+                for cert in x5c:
+                    if cert:
+                        db.insert_provider_x5c(provider_id, cert, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-    return create_response("Provider created successfully", "Provider id", result)
+    return create_response("Provider created successfully", "Provider ids", result)
 
 
 @rpr.route('/provider/list', methods=['POST'])
@@ -1236,6 +1355,13 @@ def error_server(message="Internal server error. Please try again later.", code=
         "message": message
     }, code
 
+def db_write_error(e, server_message="Database error. No data was saved."):
+    if isinstance(e, db.DuplicateError):
+        return error_invalid("A record with these values already exists. No data was saved.", code=409)
+    if isinstance(e, db.InvalidDataError):
+        return error_invalid("Invalid data for one or more fields. No data was saved.")
+    return error_server(server_message)
+
 @rpr.route('/credential/create', methods=['POST'])
 def create_credential():
  
@@ -1308,10 +1434,10 @@ def create_credential():
             "A credential with this format already exists for this user.",
             code=409
         )
-    except db.DatabaseError:
-        return error_server("Error creating credentials. No data was saved.")
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error creating credentials. No data was saved.")
  
-    return create_response("Credential created successfully", "Credentials ids", result)
+    return create_response("Credential created successfully", "Credential ids", result)
 
 @rpr.route('/credential/list', methods=['POST'])
 def list_credential():
@@ -1353,14 +1479,20 @@ def create_intended_use():
     hash_pid = data.get("hash_pid")
     intended_uses = data.get("intended_uses", [])
 
+    if not isinstance(intended_uses, list):
+        return error_invalid("Field 'intended_uses' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #validation
     for intended_use in intended_uses:
+
+        if not isinstance(intended_use, dict):
+            return error_invalid("Each intended use must be an object.")
 
         missing = validate_required_fields(
             intended_use,
@@ -1379,6 +1511,23 @@ def create_intended_use():
                 "Missing required fields.",
                 missing
             )
+
+        error = check_field_types(
+            intended_use,
+            {
+                "intendedUseIdentifier": str,
+                "createdAt": str,
+                "revokedAt": str,
+                "purpose": list
+            }
+        )
+
+        if error:
+            return error
+
+        for field in ("privacyPolicy_id", "credential_ids"):
+            if not is_list_of(intended_use[field], is_int):
+                return error_invalid(f"Field '{field}' must be an array of integers.")
 
         created_at = intended_use.get("createdAt")
         revoked_at = intended_use.get("revokedAt")
@@ -1407,6 +1556,9 @@ def create_intended_use():
         purposes = intended_use.get("purpose", [])
 
         for purpose in purposes:
+            if not isinstance(purpose, dict):
+                return error_invalid("Each purpose must be an object.")
+
             missing = validate_required_fields(
                 purpose,
                 ["lang", "content"]
@@ -1417,6 +1569,10 @@ def create_intended_use():
                     "Missing required fields.",
                     missing
                 )
+
+            error = check_field_types(purpose, {"lang": str, "content": str})
+            if error:
+                return error
 
             lang = purpose.get("lang")
 
@@ -1433,6 +1589,9 @@ def create_intended_use():
 
         for privacyPolicy_id in privacyPolicy_ids:
             row = db.check_policy(privacyPolicy_id)
+
+            if not row or row[0] is None:
+                return error_invalid(f"Policy {privacyPolicy_id} not found")
 
             if user_id[0] != row[0]:
                 return error_invalid(
@@ -1462,40 +1621,35 @@ def create_intended_use():
                     f"does not belong to this user."
                 )
             
-    #insert data base
-    for intended_use in intended_uses:
-        intendedUseIdentifier = intended_use.get("intendedUseIdentifier")
-        purposes = intended_use.get("purpose", [])
-        privacyPolicy_ids = intended_use.get("privacyPolicy_id", [])
-        credential_ids = intended_use.get("credential_ids", [])
+    try:
+        with db.transaction() as cursor:
+            for intended_use in intended_uses:
+                intendedUseIdentifier = intended_use.get("intendedUseIdentifier")
+                purposes = intended_use.get("purpose", [])
+                privacyPolicy_ids = intended_use.get("privacyPolicy_id", [])
+                credential_ids = intended_use.get("credential_ids", [])
 
-        createdAt = intended_use.get("createdAt")
-        revokedAt = intended_use.get("revokedAt")
+                createdAt = intended_use.get("createdAt")
+                revokedAt = intended_use.get("revokedAt")
 
-        error = validate_date_field(createdAt, "createdAt")
-        if error:
-            return error
+                intended_use_id = db.insert_intended_use(intendedUseIdentifier, createdAt, revokedAt, user_id, cursor=cursor)
+                result.append(intended_use_id)
 
-        error = validate_date_field(revokedAt, "revokedAt")
-        if error:
-            return error
+                for purpose in purposes:
+                    lang = purpose.get("lang")
+                    content = purpose.get("content")
 
-        intended_use_id = db.insert_intended_use(intendedUseIdentifier, createdAt, revokedAt, user_id)
-        result.append(intended_use_id)
+                    mls_id = db.insert_multilanguage_string(lang, content, user_id, cursor=cursor)
+                    db.insert_intended_use_purpose(intended_use_id, mls_id, cursor=cursor)
 
-        for purpose in purposes:
-            lang = purpose.get("lang")
-            content = purpose.get("content")
+                for privacyPolicy_id in privacyPolicy_ids:
+                    db.insert_intended_use_policy(intended_use_id, privacyPolicy_id, cursor=cursor)
 
-            mls_id = db.insert_multilanguage_string(lang, content, user_id)
-            db.insert_intended_use_purpose(intended_use_id, mls_id)
-        
-        for privacyPolicy_id in privacyPolicy_ids:
-            db.insert_intended_use_policy(intended_use_id, privacyPolicy_id)
+                for credential_id in credential_ids:
+                    db.insert_intended_use_credential(intended_use_id, credential_id, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-        for credential_id in credential_ids:
-            db.insert_intended_use_credential(intended_use_id, credential_id)
-    
     return create_response("Intended Use created successfully", "Intended Use ids", result)
 
 @rpr.route('/intended_use/list', methods=['POST'])
@@ -1711,18 +1865,28 @@ def create_provided_attestation():
     hash_pid = data.get("hash_pid")
     providesAttestations = data.get("providesAttestations", [])
 
+    if not isinstance(providesAttestations, list):
+        return error_invalid("Field 'providesAttestations' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
-    
+
     #validation
     for providesAttestation in providesAttestations:
+        if not isinstance(providesAttestation, dict):
+            return error_invalid("Each providesAttestation must be an object.")
+
         missing = validate_required_fields(providesAttestation, ["format", "meta"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
+
+        error = check_field_types(providesAttestation, {"format": str})
+        if error:
+            return error
+
         if not isinstance(providesAttestation["meta"], dict):
             return error_response(
                 "Field 'meta' must be an object."
@@ -1735,12 +1899,16 @@ def create_provided_attestation():
             )
     
     #insert data base
-    for providesAttestation in providesAttestations:
-        format = providesAttestation.get("format")
-        meta = serialize_json(providesAttestation["meta"])
-        
-        provided_attestation_id = db.insert_provided_attestation(format, meta, user_id)
-        result.append(provided_attestation_id)
+    try:
+        with db.transaction() as cursor:
+            for providesAttestation in providesAttestations:
+                format = providesAttestation.get("format")
+                meta = serialize_json(providesAttestation["meta"])
+
+                provided_attestation_id = db.insert_provided_attestation(format, meta, user_id, cursor=cursor)
+                result.append(provided_attestation_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
     return create_response("Provided Attestation created successfully.", "Provided Attestation ids", result)
 
@@ -1780,7 +1948,10 @@ def create_supervisory_authority():
     
     hash_pid = data.get("hash_pid")
     supervisoryAuthority = data.get("supervisoryAuthority", [])
-    
+
+    if not isinstance(supervisoryAuthority, list):
+        return error_invalid("Field 'supervisoryAuthority' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
@@ -1789,13 +1960,24 @@ def create_supervisory_authority():
 
     #validation
     for aux in supervisoryAuthority:
+        if not isinstance(aux, dict):
+            return error_invalid("Each supervisoryAuthority must be an object.")
+
         missing = validate_required_fields(aux, ["name", "country"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
-        emails = aux.get("email", [])
-        formuris = aux.get("formURI", [])
-        phones = aux.get("phone", [])
+
+        error = check_field_types(aux, {"name": str, "country": str})
+        if error:
+            return error
+
+        for field in ("email", "formURI", "phone"):
+            if not is_list_of(aux.get(field) or [], is_str):
+                return error_invalid(f"Field '{field}' must be an array of strings.")
+
+        emails = aux.get("email") or []
+        formuris = aux.get("formURI") or []
+        phones = aux.get("phone") or []
         country = aux.get("country")
 
         if country not in cfgserv.eu_countries:
@@ -1805,28 +1987,29 @@ def create_supervisory_authority():
             return error_response("At least one of the following fields is required.", "email, formURI or phone")
         
     #insert data base
-    for aux in supervisoryAuthority:
+    try:
+        with db.transaction() as cursor:
+            for aux in supervisoryAuthority:
 
-        name = aux.get("name")
-        country = aux.get("country")
-        emails = aux.get("email", [])
-        formuris = aux.get("formURI", [])
-        phones = aux.get("phone", [])
-        
-        supervisory_authority_id = db.insert_supervisory_authority(name, country, user_id)
-        result.append(supervisory_authority_id)
+                name = aux.get("name")
+                country = aux.get("country")
+                emails = aux.get("email") or []
+                formuris = aux.get("formURI") or []
+                phones = aux.get("phone") or []
 
-        if emails:
-            for email in emails:
-                db.insert_supervisory_authority_email(supervisory_authority_id, email)
+                supervisory_authority_id = db.insert_supervisory_authority(name, country, user_id, cursor=cursor)
+                result.append(supervisory_authority_id)
 
-        if formuris:
-            for formUri in formuris:
-                db.insert_supervisory_authority_formuri(supervisory_authority_id, formUri)
+                for email in emails:
+                    db.insert_supervisory_authority_email(supervisory_authority_id, email, cursor=cursor)
 
-        if phones:
-            for phone in phones:
-                db.insert_supervisory_authority_phone(supervisory_authority_id, phone)
+                for formUri in formuris:
+                    db.insert_supervisory_authority_formuri(supervisory_authority_id, formUri, cursor=cursor)
+
+                for phone in phones:
+                    db.insert_supervisory_authority_phone(supervisory_authority_id, phone, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
     return create_response("Supervisory Authority created successfully", "Supervisory Authority ids", result)
 
@@ -1893,7 +2076,7 @@ def create_wrp():
                 return error_invalid(f"{field} must be an integer.")
 
         for field in ("intendedUse_ids", "providesAttestations_id", "usesIntermediary"):
-            if not is_list_of(wrp.get(field, []), is_int):
+            if not is_list_of(wrp.get(field) or [], is_int):
                 return error_invalid(f"{field} must be an array of integers.")
 
         for field in ("supportURI", "entitlements"):
@@ -1922,10 +2105,10 @@ def create_wrp():
                 return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
 
         supervisoryAuthority = wrp.get("supervisoryAuthority")
-        usesIntermediarys = wrp.get("usesIntermediary", [])
-        providesAttestations_ids = wrp.get("providesAttestations_id", [])
+        usesIntermediarys = wrp.get("usesIntermediary") or []
+        providesAttestations_ids = wrp.get("providesAttestations_id") or []
         provider_id = wrp.get("provider_id")
-        intendedUse_ids = wrp.get("intendedUse_ids", [])
+        intendedUse_ids = wrp.get("intendedUse_ids") or []
         entitlements = wrp.get("entitlements", [])
         
         if user_id != db.check_supervisory_authority(supervisoryAuthority):
@@ -1970,11 +2153,11 @@ def create_wrp():
             "isIntermediary": False if wrp.get("usesIntermediary") else wrp.get("isIntermediary", False),
             "supervisoryAuthority": wrp["supervisoryAuthority"],
             "entitlements": wrp["entitlements"],
-            "usesIntermediary": wrp.get("usesIntermediary", []),
+            "usesIntermediary": wrp.get("usesIntermediary") or [],
             "supportURI": wrp["supportURI"],
             "srvDescription": wrp["srvDescription"],
-            "providesAttestations_id": wrp.get("providesAttestations_id", []),
-            "intendedUse_ids": wrp.get("intendedUse_ids", []),
+            "providesAttestations_id": wrp.get("providesAttestations_id") or [],
+            "intendedUse_ids": wrp.get("intendedUse_ids") or [],
         }
         for wrp in wrps
     ]
@@ -1982,10 +2165,10 @@ def create_wrp():
     #insert data base
     try:
         result = db.insert_wrps_atomic(to_insert, user_id)
-    except db.DatabaseError:
-        return error_server("Error creating Wallet Relying Party. No data was saved.")
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error creating Wallet Relying Party. No data was saved.")
 
-    return create_response("Wallet Relying Party created successfully", "wrp ids", result)
+    return create_response("Wallet Relying Party created successfully", "Wallet Relying Party ids", result)
 
 @rpr.route('/wallet_rp/list', methods=['POST'])
 def list_wrp():

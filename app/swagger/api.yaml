@@ -251,46 +251,40 @@ paths:
                           - contract
 
       responses:
-        "200":
+        "201":
           description: Law created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Law created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example:
-                      - 1
-                      - 2
-                      - 3
+                    type: object
+                    properties:
+                      Law ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1, 2]
 
         "400":
-          description: Invalid input or missing fields
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Missing required fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
+
+        "500":
+          $ref: "#/components/responses/CreateServerError"
+
   /law/list:
     post:
       summary: List Laws
@@ -435,31 +429,39 @@ paths:
                         example: [1, 2]
 
       responses:
-        "200":
+        "201":
           description: Legal Person created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Legal Person created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1, 2]
+                    type: object
+                    properties:
+                      Legal Person ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1, 2]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Law or Legal Person does not belong to user
-
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /legal_person/list:
     post:
@@ -816,27 +818,39 @@ paths:
                         example: "Porto"
 
       responses:
-        "200":
+        "201":
           description: Natural Person created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Natural Person created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1, 2]
+                    type: object
+                    properties:
+                      Natural Person ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1, 2]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
+
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /natural_person/list:
     post:
@@ -990,30 +1004,39 @@ paths:
                           - "http://data.europa.eu/eudi/id/Excise"
 
       responses:
-        "200":
+        "201":
           description: Identifier created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Identifier created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1, 2]
+                    type: object
+                    properties:
+                      Identifier ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1, 2]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Invalid identifier type
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /identifier/list:
     post:
@@ -1114,7 +1137,7 @@ paths:
         | `natural_person_id` | integer | Identifier of the associated Natural Person. |
         | `identifiers` | array<integer> | References to previously created Identifier objects. |
         | `country` | string | ISO 3166-1 alpha-2 country code of an EU Member State. |
-        | `postalAddress` | array<object> | Postal address information. |
+        | `postalAddress` | array<string> | Postal address information. |
         | `email` | array<string> | Contact email address(es). |
         | `phone` | array<string> | Contact phone number(s). |
         | `infoURI` | array<string> | URI(s) containing additional information about the Legal Entity. |
@@ -1191,31 +1214,39 @@ paths:
                         example: ["https://example.com"]
 
       responses:
-        "200":
-          description: Legal Entity created successfully
+        "201":
+          description: Legal Entity created successfully.
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
-                    example: Legal Entity created successfully
+                    example: Legal Entity created successfully.
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1]
+                    type: object
+                    properties:
+                      Legal Entity ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Resource does not belong to user
-
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /legal_entity/list:
     post:
@@ -1538,30 +1569,39 @@ paths:
                         description: Type depends on intention (wrp or intended_use)
 
       responses:
-        "200":
+        "201":
           description: Policy created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Policy created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1, 2]
+                    type: object
+                    properties:
+                      Policy ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1, 2]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Invalid policy type or intention
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /policy/list:
     post:
@@ -1603,32 +1643,35 @@ paths:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 200
                   message:
                     type: string
-                    example: Policies retrieved successfully
-                  policy:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: integer
-                          example: 1
-                        policyURI:
-                          type: string
-                          example: "https://example.com/privacy-policy"
-                        type:
-                          type: string
-                          example: "PRIVACY_POLICY"
-                        intention:
-                          type: string
-                          example: "wrp"
+                    example: Policies retrieved successfully.
+                  data:
+                    type: object
+                    properties:
+                      policy:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            policy_id:
+                              type: integer
+                              example: 1
+                            policy_uri:
+                              type: string
+                              example: "https://example.com/privacy-policy"
+                            type:
+                              type: string
+                              example: "PRIVACY_POLICY"
 
         "400":
-          description: Invalid input or missing fields
-
-        "401":
-          description: Invalid hash_pid
+          description: Invalid or missing JSON body, missing fields or invalid hash_pid
 
 
   /provider/create:
@@ -1756,31 +1799,39 @@ paths:
                           - "MIIC...base64cert2"
 
       responses:
-        "200":
+        "201":
           description: Provider created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Provider created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1]
+                    type: object
+                    properties:
+                      Provider ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Resource does not belong to user or invalid policy type
-
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /provider/list:
     post:
@@ -2124,28 +2175,39 @@ paths:
                                 - "$.credentialSubject.given_name"
 
       responses:
-        "200":
+        "201":
           description: Credential created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Credential created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1, 2]
+                    type: object
+                    properties:
+                      Credential ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1, 2]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /credential/list:
     post:
@@ -2328,30 +2390,39 @@ paths:
                         example: [1, 2]
 
       responses:
-        "200":
+        "201":
           description: Intended Use created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Intended Use created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1]
+                    type: object
+                    properties:
+                      Intended Use ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Resource does not belong to user or invalid type
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /intended_use/list:
     post:
@@ -2817,28 +2888,39 @@ paths:
                             - "urn:eudi:pid:1"
 
       responses:
-        "200":
-          description: Provided Attestation created successfully
+        "201":
+          description: Provided Attestation created successfully.
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
-                    example: Provided Attestation created successfully
+                    example: Provided Attestation created successfully.
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1, 2]
+                    type: object
+                    properties:
+                      Provided Attestation ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1, 2]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /provided_attestation/list:
     post:
@@ -3053,30 +3135,39 @@ paths:
                           - "+351213928400"
 
       responses:
-        "200":
+        "201":
           description: Supervisory Authority created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Supervisory Authority created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1]
+                    type: object
+                    properties:
+                      Supervisory Authority ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1]
 
         "400":
-          description: Invalid input or missing fields
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Validation error (e.g., missing contact methods)
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /supervisory_authority/list:
     post:
@@ -3321,30 +3412,39 @@ paths:
                         example: false
 
       responses:
-        "200":
+        "201":
           description: Wallet Relying Party created successfully
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status:
+                    type: string
+                    example: success
+                  code:
+                    type: integer
+                    example: 201
                   message:
                     type: string
                     example: Wallet Relying Party created successfully
                   data:
-                    type: array
-                    items:
-                      type: integer
-                    example: [1]
+                    type: object
+                    properties:
+                      Wallet Relying Party ids:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1]
 
         "400":
-          description: Invalid input
+          $ref: "#/components/responses/CreateBadRequest"
 
-        "401":
-          description: Invalid hash_pid
+        "409":
+          $ref: "#/components/responses/CreateConflict"
 
-        "403":
-          description: Validation error (ownership, duplicates, invalid types)
+        "500":
+          $ref: "#/components/responses/CreateServerError"
 
   /wallet_rp/list:
     post:
@@ -4569,3 +4669,53 @@ paths:
 
         "500":
           description: Internal server error
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        code:
+          type: integer
+        message:
+          type: string
+
+  responses:
+    CreateBadRequest:
+      description: >
+        Invalid or missing JSON body, missing required fields, wrong field types,
+        invalid hash_pid, referenced resource not found or not owned by the user,
+        or invalid data for one or more fields. No data was saved.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            status: error
+            code: 400
+            message: Invalid data for one or more fields. No data was saved.
+
+    CreateConflict:
+      description: A record with these values already exists. No data was saved.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            status: error
+            code: 409
+            message: A record with these values already exists. No data was saved.
+
+    CreateServerError:
+      description: Database or internal error. No data was saved.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            status: error
+            code: 500
+            message: Database error. No data was saved.
