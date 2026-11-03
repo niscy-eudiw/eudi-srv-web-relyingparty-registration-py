@@ -170,7 +170,28 @@ def setup_trusted_CAs():
 
 setup_trusted_CAs()
 
+from flask import request
+
+def is_api_request():
+    return request.is_json or request.accept_mimetypes.best == "application/json"
+
 def handle_exception(e):
+    original = getattr(e, "original_exception", None) or e
+    logger.error(
+        f"Unhandled exception on {request.method} {request.path}: {original!r}",
+        exc_info=(type(original), original, original.__traceback__),
+    )
+
+    if is_api_request():
+        return (
+            jsonify({
+                "status": "error",
+                "code": 500,
+                "message": "Internal server error"
+            }),
+            500,
+        )
+
     return (
         jsonify({
             "error": "Internal Server Error",
