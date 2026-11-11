@@ -152,8 +152,8 @@ The example uses curl commands and sample values that comply with the referenced
 | 10   | Provided Attestation     | Register attestation              |
 | 11   | Supervisory Authority    | Register supervisory authority    |
 | 12   | Wallet RP                | Create Wallet RP                  |
-| 13   | Registration Certificate | Generate registration certificate |
-| 14   | Access Certificate       | Generate access certificate       |
+| 13   | Access Certificate       | Generate access certificate       |
+| 14   | Registration Certificate | Generate registration certificate |
 
 ### Step 1 - Create Law
 #### POST /law/create
@@ -476,9 +476,8 @@ curl --location 'https://registry.serviceproviders.eudiw.dev/wallet_rp/create' \
     ]
 }'
 ```
-
-### Step 13 - Generate Registration Certificate
-#### POST /intended_use/certificate
+### Step 13 - Generate Access Certificate
+#### POST /wallet_rp/certificate
 
 ``` code
 curl --location 'https://registry.serviceproviders.eudiw.dev/wallet_rp/certificate' \
@@ -490,8 +489,8 @@ curl --location 'https://registry.serviceproviders.eudiw.dev/wallet_rp/certifica
 }'
 ```
 
-### Step 14 - Generate Access Certificate
-#### POST /wallet_rp/certificate
+### Step 14 - Generate Registration Certificate
+#### POST /intended_use/certificate
 
 ``` code
 curl --location 'https://registry.serviceproviders.eudiw.dev/intended_use/certificate' \
