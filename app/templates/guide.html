@@ -131,10 +131,7 @@
   <nav>
     <ul>
       <li><a href="#overview">Overview</a></li>
-      <li><a href="#authentication">Authentication</a></li>
       <li><a href="#workflow">Recommended Workflow</a></li>
-      <li><a href="#examples">Examples</a></li>
-      <li><a href="#certificates">Certificates</a></li>
       <li><a href="#swagger">Swagger</a></li>
     </ul>
   </nav>
@@ -144,394 +141,58 @@
     <section id="overview">
       <h2>Overview</h2>
 
-      <p>
-        The WRP Registry API allows users to authenticate using PID/OID4VP,
-        manage legal entities and wallet relying parties, and generate certificates.
-      </p>
+      <p>As per the <a href="https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md">European Digital Identity Wallet Architecture and Reference Framework Trust Model</a>,</p>
 
-      <div class="note">
-        The API follows a hierarchical structure:
-        <br><br>
-        <strong>Person → Legal Entity → Provider → Wallet Relying Party → Intended Use → Credential</strong>
-      </div>
-    </section>
+      <ul>
+        <li>Relying Parties are registered by a Relying Party Registrar in their Member State.</li>
+        <li>As a result of the registration, a Relying Party receives an access certificate (WRPAC) from a Relying Party Access CA and a registration certificate (WRPRC).</li>
+      </ul>
 
-    <section id="authentication">
-      <h2>Authentication Flow</h2>
+      <ul>
+        <li>The RP access certificate is used by the Wallet Instance to authenticate the Relying Party Instance.</li>
+        <li>The RP registration certificate is used by the Wallet Instance to access the intended use and attribute access policies of a WRP.</li>
+      </ul>
 
-      <div class="endpoint">
-        <span class="method">GET</span>
-        <h3>/authentication</h3>
+      <ul>
+        <li>Relying Party authentication is a process whereby a Relying Party proves its identity to a Wallet Instance, in the context of a transaction in which the Relying Party requests the Wallet Instance to release some attributes.</li>
+        <li>Relying Party authentication is included in the protocol used (both in ISO/IEC 18013-5 and OpenID4VP) by a Wallet Instance and a Relying Party Instance to communicate.</li>
+      </ul>
 
-        <p>
-          Starts the authentication flow and returns a QR Code together with a presentation ID.
-        </p>
+      <p>For more detailed information:</p>
 
-        <pre><code>GET /authentication</code></pre>
-      </div>
+      <ul>
+        <li><a href="https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md#317-registrars">Registrars</a></li>
+        <li><a href="https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md#318-access-certificate-authorities">Access Certificate Authorities</a></li>
+        <li><a href="https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/blob/main/docs/architecture-and-reference-framework-main.md#319-providers-of-registration-certificates">Providers of registration certificates</a></li>
+        <li><a href="https://eur-lex.europa.eu/eli/reg_impl/2025/848/oj">CIR 2025/848</a></li>
+        <li><a href="https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts5-common-formats-and-api-for-rp-registration-information.md">TS5</a></li>
+        <li><a href="https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts6-common-set-of-rp-information-to-be-registered.md">TS6</a></li>
+      </ul>
 
-      <div class="endpoint">
-        <span class="method">GET</span>
-        <h3>/pid_authorization</h3>
+      <p>The Relying Party Registration complies with the requirements set out by the
+      <a href="https://eur-lex.europa.eu/eli/reg_impl/2025/848/oj">CIR 2025/848</a>,
+      <a href="https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts5-common-formats-and-api-for-rp-registration-information.md">TS5</a>
+      and
+      <a href="https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications/blob/main/docs/technical-specifications/ts6-common-set-of-rp-information-to-be-registered.md">TS6</a>.</p>
 
-        <p>
-          Verifies whether the PID authentication flow has been completed.
-        </p>
-      </div>
+      <p>The RP access certificate format complies with <a href="https://www.etsi.org/deliver/etsi_ts/119400_119499/11941108/01.01.01_60/ts_11941108v010101p.pdf">ETSI TS 119 411-8</a>.<br>
+      The RP registration certificate format complies with <a href="https://www.etsi.org/deliver/etsi_ts/119400_119499/119475/01.02.01_60/ts_119475v010201p.pdf">ETSI TS 119 475</a>.</p>
 
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/getpidoid4vp</h3>
+      <p>The Relying Party Registration Service provides two main functionalities:</p>
 
-        <p>
-          Retrieves PID information and returns the user <code>hash_pid</code>.
-        </p>
-      </div>
+      <ul>
+        <li>Register a new Relying Party, issuing the Relying Party Access certificate and keypair in pkcs#12 (P12) format and Registration certificate in JSON Web Tokens (JWT) and CBOR Web Tokens (CWT) format, both signed with an Advanced Electronic Signature (ADES) with the B-B profile.</li>
+        <li>List the certificates issued and enable their revocation.</li>
+      </ul>
+
+      <p> For more information, please refer to the <a href="https://github.com/eu-digital-identity-wallet/eudi-srv-web-relyingparty-registration-py/blob/main/README.md">Relying Party Registration service repository</a>.</p>
     </section>
 
     <section id="workflow">
       <h2>Recommended Workflow</h2>
-
-      <ol>
-        <li>Authenticate using the PID/OID4VP flow.</li>
-        <li>Create Law.</li>
-        <li>Create Legal Person.</li>
-        <li>Create Identifiers.</li>
-        <li>Create Natural Person or Legal Person.</li>
-        <li>Create a Legal Entity.</li>
-        <li>Create Policies (wrp).</li>
-        <li>Create a Provider.</li>
-        <li>Create Credential</li>
-        <li>Create Policies (intended_use).</li>
-        <li>Create Intended Uses.</li>
-        <li>Create Provided Attestations.</li>
-        <li>Create Supervisory Authorities.</li>
-        <li>Create Wallet Relying Parties.</li>
-        <li>Generate certificates.</li>
-      </ol>
-    </section>
-
-    <section id="examples">
-      <h2>Example Requests</h2>
-
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/law/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "law": [
-            {
-              "legalBasis": [
-                "consent",
-                "contract"
-              ],
-              "legislativeIdentifier": "GDPR-ART-6"
-            }
-          ]
-        }
-        </code></pre>
-      </div>
+      <p>The Relying Party Registration service follows a specific workflow for registering new relying parties and managing their certificates.</p>
       
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/legal_person/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "legalPerson": [
-            {
-              "law": [1],
-              "legalName": [
-                "Company A",
-                "Company B"
-              ]
-            }
-          ]
-        }
-        </code></pre>
-      </div>
-      
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/identifier/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "identifier": [
-            {
-              "identifier": "PT123456789",
-              "type": "http://data.europa.eu/eudi/id/EORI-No"
-            }
-          ]
-        }
-        </code></pre>
-      </div>
-      
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/legal_entity/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "legal_entity": [
-            {
-              "country": "PT",
-              "email": [
-                "test@email.com"
-              ],
-              "identifiers": [
-                1
-              ],
-              "infoURI": [
-                "https://example.com"
-              ],
-              "legal_person_id": 1,
-              "phone": [
-                "+351912345678"
-              ],
-              "postalAddress": [
-                "Rua A, Porto"
-              ]
-            }
-          ]
-        }
-        </code></pre>
-      </div>
-
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/policy/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "{{hash_pid}}",
-          "policy": [
-              {  
-                  "intention": "wrp",
-                  "policyURI": "policy",
-                  "type": "http://data.europa.eu/eudi/policy/trust-service-practice-statement"
-              }
-          ]
-        }
-        </code></pre>
-      </div>
-
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/provider/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "provider": [
-            {
-              "legalEntityId": 1,
-              "policy_id": [
-                1
-              ],
-              "providerType": "WALLET_PROVIDER",
-              "x5c": [
-                "MIIC...base64cert1",
-                "MIIC...base64cert2"
-              ]
-            }
-          ]
-        }
-        </code></pre>
-      </div>
-      
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/credential/create</h3>
-
-        <pre><code>
-        {
-          "credentials": [
-            {
-              "claims": [
-                {
-                  "path": "credentialSubject.name"
-                }
-              ],
-              "format": "jwt_vc",
-              "meta": "PID Credential",
-            }
-          ],
-          "hash_pid": "abc123hash"
-        }
-        </code></pre>
-      </div>
-      
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/policy/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "{{hash_pid}}",
-          "policy": [
-              {  
-                  "intention": "intended_use",
-                  "policyURI": "policy",
-                  "type": "http://data.europa.eu/eudi/policy/trust-service-practice-statement"
-              }
-          ]
-        }
-        </code></pre>
-      </div>
-      
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/intended_use/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "intended_uses": [
-            {
-              "createdAt": "2026-01-01T10:00:00Z",
-              "credential_ids": [
-                1
-              ],
-              "intendedUseIdentifier": "USE-001",
-              "privacyPolicy_id": [
-                2
-              ],
-              "purpose": [
-                {
-                  "content": "Identity verification",
-                  "lang": "en"
-                }
-              ],
-              "revokedAt": "2027-01-01T10:00:00Z"
-            }
-          ]
-        }
-        </code></pre>
-      </div>
-      
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/provided_attestation/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "providesAttestations": [
-            {
-              "format": "jwt",
-              "meta": "issuer metadata info"
-            }
-          ]
-        }
-        </code></pre>
-      </div>
-      
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/supervisory_authority/create</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "supervisoryAuthority": [
-            {
-              "country": "PT",
-              "email": [
-                "geral@cnpd.pt"
-              ],
-              "formURI": [
-                "https://www.cnpd.pt/contactos"
-              ],
-              "name": "CNPD",
-              "phone": [
-                "+351213928400"
-              ]
-            }
-          ]
-        }
-        </code></pre>
-      </div>
-
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/wallet_rp/create</h3>
-
-        <pre><code>
-        {
-          "WalletRelyingParty": [
-            {
-              "entitlements": [
-                "AGE_VERIFICATION"
-              ],
-              "intendedUse_ids": [
-                1
-              ],
-              "isPSB": true,
-              "provider_id": 1,
-              "providesAttestations_id": [
-                1
-              ],
-              "registryURI": "https://registry.example.com",
-              "srvDescription": [
-                {
-                  "content": "Wallet authentication service",
-                  "lang": "en"
-                }
-              ],
-              "supervisoryAuthority": 1,
-              "supportURI": [
-                "https://support.example.com"
-              ],
-              "tradeName": "My Wallet Service"
-            }
-          ],
-          "hash_pid": "abc123hash"
-        }
-        </code></pre>
-      </div>
-    </section>
-
-    <section id="certificates">
-      <h2>Certificate Generation</h2>
-
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/intended_use/certificate</h3>
-        
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "intended_use_id": 1
-        }
-        </code></pre>
-
-        <p>
-          Generates a signed Intended Use Registration Certificate using JAdES and COSE.
-        </p>
-      </div>
-
-      <div class="endpoint">
-        <span class="method">POST</span>
-        <h3>/wallet_rp/certificate</h3>
-
-        <pre><code>
-        {
-          "hash_pid": "abc123hash",
-          "password": "StrongPassword123!",
-          "wrp_id": 1
-        }
-        </code></pre>
-
-        <p>
-          Generates a Wallet Relying Party certificate in PKCS#12 format.
-        </p>
-      </div>
+      <p> For more information, please refer to the <a href="https://github.com/eu-digital-identity-wallet/eudi-srv-web-relyingparty-registration-py/blob/main/workflow_and_endpoints.md">Relying Party Registration Workflow and Endpoints</a>.</p>
     </section>
 
     <section id="swagger">

@@ -20,12 +20,59 @@ This models.py file contains functions related to queries to add data to DB (use
 
 """
 import json
+from contextlib import contextmanager
 
 import pymysql
 from app_config.config import ConfService
 from db import get_db_connection as conn
 
 from app import logger
+
+class DatabaseError(Exception):
+    """Database error """
+
+class DuplicateError(DatabaseError):
+    """Duplicate key violation (errno 1062)."""
+
+class InvalidDataError(DatabaseError):
+    """Error caused by the submitted data (NULL, format, length, foreign key, check constraint)."""
+
+class DuplicateCredentialError(DuplicateError):
+    """Single-key violation when entering a credential."""
+
+_DUPLICATE_ERRNOS = (1062,)
+# 3819 = CHECK violation on MySQL 8, 4025 = CHECK violation on MariaDB
+_INVALID_DATA_ERRNOS = (1048, 1292, 1366, 1406, 1452, 3819, 4025)
+
+def _map_db_error(e):
+    errno = e.args[0] if e.args else None
+    if errno in _DUPLICATE_ERRNOS:
+        return DuplicateError(str(e))
+    if errno in _INVALID_DATA_ERRNOS:
+        return InvalidDataError(str(e))
+    return DatabaseError(str(e))
+
+@contextmanager
+def transaction():
+    connection = conn()
+    if connection is None:
+        raise DatabaseError("Could not connect to the database")
+
+    cursor = connection.cursor()
+    try:
+        yield cursor
+        connection.commit()
+    except pymysql.MySQLError as e:
+        connection.rollback()
+        logger.error(f"Database error, transaction rolled back: {e}")
+        raise _map_db_error(e) from e
+    except Exception:
+        connection.rollback()
+        logger.exception("Unexpected error, transaction rolled back")
+        raise
+    finally:
+        cursor.close()
+        connection.close()
 
 def serialize_json(value):
     return json.dumps(value) if value is not None else None
@@ -96,17 +143,22 @@ def insert_user(hash_pid):
             connection.close()
 
 ## -legal person-insert
-def insert_legal_person(user_id):
+def insert_legal_person(user_id, cursor=None):
+    insert_query = "INSERT INTO legal_person (" \
+    "user_id) " \
+    "VALUES (%s)"
+    params = (user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_person (" \
-            "user_id) " \
-            "VALUES (%s)"
             
-            cursor.execute(insert_query, (user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -122,18 +174,23 @@ def insert_legal_person(user_id):
             cursor.close()
             connection.close()
 
-def insert_legal_person_name(legal_person_id, name):
+def insert_legal_person_name(legal_person_id, name, cursor=None):
+    insert_query = "INSERT INTO legal_person_name (" \
+    "legal_person_id, " \
+    "name) " \
+    "VALUES (%s, %s)"
+    params = (legal_person_id, name,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_person_name (" \
-            "legal_person_id, " \
-            "name) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legal_person_id, name,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -150,18 +207,23 @@ def insert_legal_person_name(legal_person_id, name):
             connection.close()
 
 ## -legal person-update
-def associate_legal_person_law(legal_person_id, law_id):
+def associate_legal_person_law(legal_person_id, law_id, cursor=None):
+    insert_query = "INSERT INTO legal_person_law (" \
+    "legal_person_id, " \
+    "law_id) " \
+    "VALUES (%s, %s)"
+    params = (legal_person_id, law_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_person_law (" \
-            "legal_person_id, " \
-            "law_id) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legal_person_id, law_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -348,18 +410,23 @@ def check_legal_person(id):
     
             
 ## -law-insert
-def insert_law(legislative_identifier, user_id):
+def insert_law(legislative_identifier, user_id, cursor=None):
+    insert_query = "INSERT INTO law (" \
+    "legislative_identifier, " \
+    "user_id) " \
+    "VALUES (%s, %s)"
+    params = (legislative_identifier, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO law (" \
-            "legislative_identifier, " \
-            "user_id) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legislative_identifier, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -374,18 +441,23 @@ def insert_law(legislative_identifier, user_id):
             cursor.close()
             connection.close()
 
-def insert_law_legal_basis(law_id, legal_basis):
+def insert_law_legal_basis(law_id, legal_basis, cursor=None):
+    insert_query = "INSERT INTO law_legal_basis (" \
+    "law_id, " \
+    "legal_basis) " \
+    "VALUES (%s, %s)"
+    params = (law_id, legal_basis,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO law_legal_basis (" \
-            "law_id, " \
-            "legal_basis) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (law_id, legal_basis,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -484,21 +556,26 @@ def check_law(id):
 
 
 ## -natural person-insert
-def insert_natural_person(family_name, given_name, date_of_birth, place_of_birth, user_id):
+def insert_natural_person(family_name, given_name, date_of_birth, place_of_birth, user_id, cursor=None):
+    insert_query = "INSERT INTO natural_person (" \
+    "family_name, " \
+    "given_name, " \
+    "date_of_birth, " \
+    "place_of_birth, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s, %s, %s)"
+    params = (family_name, given_name, date_of_birth, place_of_birth, user_id)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO natural_person (" \
-            "family_name, " \
-            "given_name, " \
-            "date_of_birth, " \
-            "place_of_birth, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s, %s, %s)"
             
-            cursor.execute(insert_query, (family_name, given_name, date_of_birth, place_of_birth, user_id))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -626,20 +703,25 @@ def check_natural_person(id):
             connection.close()
     
 ## -legal entity-insert
-def insert_legal_entity(legalPerson, naturalPerson, country, user_id):
+def insert_legal_entity(legalPerson, naturalPerson, country, user_id, cursor=None):
+    insert_query = "INSERT INTO legal_entity (" \
+    "legal_person_id, " \
+    "natural_person_id, " \
+    "country, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s, %s)"
+    params = (legalPerson, naturalPerson, country, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_entity (" \
-            "legal_person_id, " \
-            "natural_person_id, " \
-            "country, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s, %s)"
             
-            cursor.execute(insert_query, (legalPerson, naturalPerson, country, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -655,18 +737,23 @@ def insert_legal_entity(legalPerson, naturalPerson, country, user_id):
             cursor.close()
             connection.close()
 
-def insert_legal_entity_identifier(legal_entity_id, identifier_id):
+def insert_legal_entity_identifier(legal_entity_id, identifier_id, cursor=None):
+    insert_query = "INSERT INTO legal_entity_identifier (" \
+    "legal_entity_id, " \
+    "identifier_id) " \
+    "VALUES (%s, %s)"
+    params = (legal_entity_id, identifier_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_entity_identifier (" \
-            "legal_entity_id, " \
-            "identifier_id) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legal_entity_id, identifier_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -682,18 +769,23 @@ def insert_legal_entity_identifier(legal_entity_id, identifier_id):
             cursor.close()
             connection.close()
 
-def insert_legal_entity_postal_address(legal_entity_id, address):
+def insert_legal_entity_postal_address(legal_entity_id, address, cursor=None):
+    insert_query = "INSERT INTO legal_entity_postal_address (" \
+    "legal_entity_id, " \
+    "address) " \
+    "VALUES (%s, %s)"
+    params = (legal_entity_id, address,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_entity_postal_address (" \
-            "legal_entity_id, " \
-            "address) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legal_entity_id, address,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -709,18 +801,23 @@ def insert_legal_entity_postal_address(legal_entity_id, address):
             cursor.close()
             connection.close()
             
-def insert_legal_entity_info_uri(legal_entity_id, uri):
+def insert_legal_entity_info_uri(legal_entity_id, uri, cursor=None):
+    insert_query = "INSERT INTO legal_entity_info_uri (" \
+    "legal_entity_id, " \
+    "uri) " \
+    "VALUES (%s, %s)"
+    params = (legal_entity_id, uri,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_entity_info_uri (" \
-            "legal_entity_id, " \
-            "uri) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legal_entity_id, uri,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -736,18 +833,23 @@ def insert_legal_entity_info_uri(legal_entity_id, uri):
             cursor.close()
             connection.close()  
 
-def insert_legal_entity_email(legal_entity_id, email):
+def insert_legal_entity_email(legal_entity_id, email, cursor=None):
+    insert_query = "INSERT INTO legal_entity_email (" \
+    "legal_entity_id, " \
+    "email) " \
+    "VALUES (%s, %s)"
+    params = (legal_entity_id, email,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_entity_email (" \
-            "legal_entity_id, " \
-            "email) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legal_entity_id, email,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -763,18 +865,23 @@ def insert_legal_entity_email(legal_entity_id, email):
             cursor.close()
             connection.close()
             
-def insert_legal_entity_phone(legal_entity_id, phone):
+def insert_legal_entity_phone(legal_entity_id, phone, cursor=None):
+    insert_query = "INSERT INTO legal_entity_phone (" \
+    "legal_entity_id, " \
+    "phone) " \
+    "VALUES (%s, %s)"
+    params = (legal_entity_id, phone,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO legal_entity_phone (" \
-            "legal_entity_id, " \
-            "phone) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (legal_entity_id, phone,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1156,19 +1263,24 @@ def get_identifiers_legal_entity(legal_entity_id):
             connection.close()
 
 ## -identifier-insert
-def insert_identifier(identifier, type, user_id):
+def insert_identifier(identifier, type, user_id, cursor=None):
+    insert_query = "INSERT INTO identifier (" \
+    "identifier, " \
+    "type, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s)"
+    params = (identifier, type, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO identifier (" \
-            "identifier, " \
-            "type, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s)"
             
-            cursor.execute(insert_query, (identifier, type, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1251,19 +1363,24 @@ def check_identifier(id):
             connection.close()
     
 ## -provider-insert
-def insert_provider(legal_entity_id, provider_type, user_id):
+def insert_provider(legal_entity_id, provider_type, user_id, cursor=None):
+    insert_query = "INSERT INTO provider (" \
+    "legal_entity_id, " \
+    "provider_type, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s)"
+    params = (legal_entity_id, provider_type, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO provider (" \
-            "legal_entity_id, " \
-            "provider_type, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s)"
             
-            cursor.execute(insert_query, (legal_entity_id, provider_type, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1279,18 +1396,23 @@ def insert_provider(legal_entity_id, provider_type, user_id):
             cursor.close()
             connection.close()
 
-def insert_provider_x5c(provider_id, certificate):
+def insert_provider_x5c(provider_id, certificate, cursor=None):
+    insert_query = "INSERT INTO provider_x5c (" \
+    "provider_id, " \
+    "certificate) " \
+    "VALUES (%s, %s)"
+    params = (provider_id, certificate,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO provider_x5c (" \
-            "provider_id, " \
-            "certificate) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (provider_id, certificate,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1445,19 +1567,24 @@ def get_provider_policy(provider_id):
             connection.close()
 
 ## -policy-insert
-def insert_policy(policy_uri, type, user_id):
+def insert_policy(policy_uri, type, user_id, cursor=None):
+    insert_query = "INSERT INTO policy (" \
+    "policy_uri, " \
+    "type, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s)"
+    params = (policy_uri, type, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO policy (" \
-            "policy_uri, " \
-            "type, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s)"
             
-            cursor.execute(insert_query, (policy_uri, type, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1540,18 +1667,23 @@ def check_policy(id):
             cursor.close()
             connection.close()
 
-def insert_provider_policy(provider_id, policy_id):
+def insert_provider_policy(provider_id, policy_id, cursor=None):
+    insert_query = "INSERT INTO provider_policy (" \
+    "provider_id, " \
+    "policy_id) " \
+    "VALUES (%s, %s)"
+    params = (provider_id, policy_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO provider_policy (" \
-            "provider_id, " \
-            "policy_id) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (provider_id, policy_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1605,19 +1737,24 @@ def delete_provider_policy(provider_id, policy_ids):
             connection.close()
 
 ## -supervisory authority-insert
-def insert_supervisory_authority(name, country, user_id):
+def insert_supervisory_authority(name, country, user_id, cursor=None):
+    insert_query = "INSERT INTO supervisory_authority (" \
+    "name, " \
+    "country, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s)"
+    params = (name, country, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO supervisory_authority (" \
-            "name, " \
-            "country, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s)"
             
-            cursor.execute(insert_query, (name, country, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1633,18 +1770,23 @@ def insert_supervisory_authority(name, country, user_id):
             cursor.close()
             connection.close()
 
-def insert_supervisory_authority_phone(authority_id, phone):
+def insert_supervisory_authority_phone(authority_id, phone, cursor=None):
+    insert_query = "INSERT INTO supervisory_authority_phone (" \
+    "authority_id, " \
+    "phone) " \
+    "VALUES (%s, %s)"
+    params = (authority_id, phone,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO supervisory_authority_phone (" \
-            "authority_id, " \
-            "phone) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (authority_id, phone,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1660,18 +1802,23 @@ def insert_supervisory_authority_phone(authority_id, phone):
             cursor.close()
             connection.close()
             
-def insert_supervisory_authority_formuri(authority_id, formURI):
+def insert_supervisory_authority_formuri(authority_id, formURI, cursor=None):
+    insert_query = "INSERT INTO supervisory_authority_formuri (" \
+    "authority_id, " \
+    "formURI) " \
+    "VALUES (%s, %s)"
+    params = (authority_id, formURI,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO supervisory_authority_formuri (" \
-            "authority_id, " \
-            "formURI) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (authority_id, formURI,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1687,18 +1834,23 @@ def insert_supervisory_authority_formuri(authority_id, formURI):
             cursor.close()
             connection.close()
                         
-def insert_supervisory_authority_email(authority_id, email):
+def insert_supervisory_authority_email(authority_id, email, cursor=None):
+    insert_query = "INSERT INTO supervisory_authority_email (" \
+    "authority_id, " \
+    "email) " \
+    "VALUES (%s, %s)"
+    params = (authority_id, email,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO supervisory_authority_email (" \
-            "authority_id, " \
-            "email) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (authority_id, email,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -1806,230 +1958,335 @@ def check_supervisory_authority(id):
             connection.close()
 
 ## -wrp-insert
-def insert_wrp(provider_id, trade_name, ispsb, regristry_uri, supervisory_authority_id, user_id):
+def insert_wrp(provider_id, trade_name, ispsb, regristry_uri, supervisory_authority_id, user_id, cursor=None):
+    insert_query = "INSERT INTO wallet_relying_party (" \
+    "provider_id, " \
+    "trade_name, " \
+    "is_psb, " \
+    "registry_uri, " \
+    "supervisory_authority_id, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s, %s, %s, %s)"
+    params = (provider_id, trade_name, ispsb, regristry_uri, supervisory_authority_id, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wallet_relying_party (" \
-            "provider_id, " \
-            "trade_name, " \
-            "is_psb, " \
-            "registry_uri, " \
-            "supervisory_authority_id, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s, %s, %s, %s)"
-            
-            cursor.execute(insert_query, (provider_id, trade_name, ispsb, regristry_uri, supervisory_authority_id, user_id,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party successfully added. New Wallet Relying Party ID: {cursor.lastrowid} - {user_id}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party : {e} - {user_id}")
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-def insert_wrp_service(wallet_relying_party_id, service_trade_name, email, phone, service_identifier, is_intermediary, user_id):
+def insert_wrp_service(wallet_relying_party_id, service_trade_name, service_identifier, email, phone, is_intermediary, user_id, cursor=None):
+    insert_query = "INSERT INTO wallet_relying_party_service (" \
+    "wallet_relying_party_id, " \
+    "service_trade_name, " \
+    "service_identifier, " \
+    "email, " \
+    "phone, " \
+    "is_intermediary, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+    params = (wallet_relying_party_id, service_trade_name, service_identifier, email, phone, is_intermediary, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wallet_relying_party_service (" \
-            "wallet_relying_party_id, " \
-            "service_trade_name, " \
-            "email, " \
-            "phone, " \
-            "service_identifier, " \
-            "is_intermediary, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
-            
-            cursor.execute(insert_query, (wallet_relying_party_id, service_trade_name, service_identifier, email, phone, is_intermediary, user_id,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Service successfully added. New Wallet Relying Party Service ID: {cursor.lastrowid} - {user_id}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Service : {e} - {user_id}")
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-def insert_wrp_entitlement(wrp_service_id, entitlement):
+def insert_wrp_entitlement(wrp_service_id, entitlement, cursor=None):
+    insert_query = "INSERT INTO wrp_entitlement (" \
+    "wrp_service_id, " \
+    "entitlement) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, entitlement,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_entitlement (" \
-            "wrp_service_id, " \
-            "entitlement) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, entitlement,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Entitlement successfully added. New Wallet Relying Party Entitlement  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Entitlement : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
-            
-def insert_wrp_intermediary(wrp_service_id, intermediary_wrp_id):
+
+def insert_wrp_intermediary(wrp_service_id, intermediary_wrp_id, cursor=None):
+    insert_query = "INSERT INTO wrp_intermediary (" \
+    "wrp_service_id, " \
+    "intermediary_wrp_id) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, intermediary_wrp_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_intermediary (" \
-            "wrp_service_id, " \
-            "intermediary_wrp_id) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, intermediary_wrp_id,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Intermediary successfully added. New Wallet Relying Party Intermediary  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Intermediary : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
-            
-def insert_wrp_srv_description(wrp_service_id, mls_id):
+
+def insert_wrp_srv_description(wrp_service_id, mls_id, cursor=None):
+    insert_query = "INSERT INTO wrp_srv_description (" \
+    "wrp_service_id, " \
+    "mls_id) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, mls_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_srv_description (" \
-            "wrp_service_id, " \
-            "mls_id) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, mls_id,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Srv Description successfully added. New Wallet Relying Party Srv Description  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Srv Description : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
-            
-def insert_wrp_support_uri(wrp_service_id, uri):
+
+def insert_wrp_support_uri(wrp_service_id, uri, cursor=None):
+    insert_query = "INSERT INTO wrp_support_uri (" \
+    "wrp_service_id, " \
+    "uri) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, uri,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_support_uri (" \
-            "wrp_service_id, " \
-            "uri) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, uri,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Support Uri successfully added. New Wallet Relying Party Support Uri  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Support Uri : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-def insert_wrp_provided_attestation(wrp_service_id, provided_attestation_id):
+def insert_wrp_provided_attestation(wrp_service_id, provided_attestation_id, cursor=None):
+    insert_query = "INSERT INTO wrp_provided_attestation (" \
+    "wrp_service_id, " \
+    "provided_attestation_id) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, provided_attestation_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_provided_attestation (" \
-            "wrp_service_id, " \
-            "provided_attestation_id) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, provided_attestation_id,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Service Provided Attestation successfully added. New Wallet Relying Party Service Provided Attestation ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Provided Attestation : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-def insert_wrp_intended_use(wrp_service_id, intended_use_id):
+def insert_wrp_intended_use(wrp_service_id, intended_use_id, cursor=None):
+    insert_query = "INSERT INTO wrp_intended_use (" \
+    "wrp_service_id, " \
+    "intended_use_id) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, intended_use_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_intended_use (" \
-            "wrp_service_id, " \
-            "intended_use_id) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, intended_use_id,))
-            
+            cursor.execute(insert_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Intended Use successfully added. New Wallet Relying Party Intended Use  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Intended Use : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
+
+def _insert_wrp_service_tree(cursor, wallet_relying_party_id, svc, user_id):
+    """Writes a Wallet Relying Party Service and all its child rows using the given cursor (no commit)."""
+    # isIntermediary is already normalized by the route (False when the service uses intermediaries)
+    wrp_service_id = insert_wrp_service(wallet_relying_party_id, svc["serviceTradeName"], svc["serviceIdentifier"],
+                                        svc["email"], svc["phone"], svc["isIntermediary"], user_id, cursor=cursor)
+
+    for entitlement in svc["entitlements"]:
+        insert_wrp_entitlement(wrp_service_id, entitlement, cursor=cursor)
+
+    for sub_entitlement in svc["subEntitlements"]:
+        insert_wrp_sub_entitlement(wrp_service_id, sub_entitlement, cursor=cursor)
+
+    for intermediary_wrp_service_id in svc["usesIntermediary"]:
+        insert_wrp_intermediary(wrp_service_id, intermediary_wrp_service_id, cursor=cursor)
+
+    for uri in svc["supportURIs"]:
+        insert_wrp_support_uri(wrp_service_id, uri, cursor=cursor)
+
+    for srv_description in svc["srvDescription"]:
+        mls_id = insert_multilanguage_string(srv_description["lang"], srv_description["content"], user_id, cursor=cursor)
+        insert_wrp_srv_description(wrp_service_id, mls_id, cursor=cursor)
+
+    for provided_attestation_id in svc["providesAttestations_ids"]:
+        insert_wrp_provided_attestation(wrp_service_id, provided_attestation_id, cursor=cursor)
+
+    for intended_use_id in svc["intendedUse_ids"]:
+        insert_wrp_intended_use(wrp_service_id, intended_use_id, cursor=cursor)
+
+    for served_wrp_service_id in svc["servedWRPServices"]:
+        insert_wrp_servedwrpservices(wrp_service_id, served_wrp_service_id, cursor=cursor)
+
+    return wrp_service_id
+
+def insert_wrps_with_services_atomic(wrps, user_id):
+    """Creates Wallet Relying Parties and their services in a single transaction.
+
+    Returns a list of (wrp_id, [wrp_service_id, ...]) in request order.
+    """
+    created = []
+
+    with transaction() as cursor:
+        for wrp in wrps:
+            wrp_id = insert_wrp(wrp["provider_id"], wrp["tradeName"], wrp["isPSB"], wrp["registryURI"],
+                                wrp["supervisoryAuthority"], user_id, cursor=cursor)
+            wrp_service_ids = []
+
+            for svc in wrp["WalletRelyingPartyService"]:
+                wrp_service_ids.append(_insert_wrp_service_tree(cursor, wrp_id, svc, user_id))
+
+            created.append((wrp_id, wrp_service_ids))
+
+    logger.info(f"Wallet Relying Parties successfully added. IDs: {created} - {user_id}")
+    return created
+
+def insert_wrp_services_atomic(wallet_relying_party_id, services, user_id):
+    """Creates Wallet Relying Party Services for an existing Wallet Relying Party in a single transaction."""
+    wrp_service_ids = []
+
+    with transaction() as cursor:
+        for svc in services:
+            wrp_service_ids.append(_insert_wrp_service_tree(cursor, wallet_relying_party_id, svc, user_id))
+
+    logger.info(f"Wallet Relying Party Services successfully added. IDs: {wrp_service_ids} - {user_id}")
+    return wrp_service_ids
 
 def delete_wrp_intended_use(wrp_service_id, intended_use_ids):
     if not intended_use_ids:
@@ -2142,18 +2399,23 @@ def delete_wrp_intermediary(wrp_service_id, intermediary_wrp_ids):
             cursor.close()
             connection.close()
 
-def insert_wrp_servedwrpservices(wrp_service_id, servedWRPServices):
+def insert_wrp_servedwrpservices(wrp_service_id, servedWRPServices, cursor=None):
+    insert_query = "INSERT INTO wrp_servedwrpservices (" \
+    "wrp_service_id, " \
+    "servedWRPServices) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, servedWRPServices,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_servedwrpservices (" \
-            "wrp_service_id, " \
-            "servedWRPServices) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, servedWRPServices,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -2169,18 +2431,23 @@ def insert_wrp_servedwrpservices(wrp_service_id, servedWRPServices):
             cursor.close()
             connection.close()
 
-def insert_wrp_sub_entitlement(wrp_service_id, sub_entitlement):
+def insert_wrp_sub_entitlement(wrp_service_id, sub_entitlement, cursor=None):
+    insert_query = "INSERT INTO wrp_sub_entitlement (" \
+    "wrp_service_id, " \
+    "sub_entitlement) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, sub_entitlement,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "INSERT INTO wrp_sub_entitlement (" \
-            "wrp_service_id, " \
-            "sub_entitlement) " \
-            "VALUES (%s, %s)"
-            
-            cursor.execute(insert_query, (wrp_service_id, sub_entitlement,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -2373,7 +2640,10 @@ def get_wrp_service(user_id):
 
                     pa.id,
                     pa.format,
-                    pa.meta
+                    pa.meta,
+
+                    wse.sub_entitlement,
+                    wssv.servedWRPServices
 
                 FROM wallet_relying_party_service wrps
 
@@ -2407,6 +2677,12 @@ def get_wrp_service(user_id):
                 LEFT JOIN provided_attestation pa
                     ON pa.id = wpa.provided_attestation_id
 
+                LEFT JOIN wrp_sub_entitlement wse
+                    ON wse.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_servedwrpservices wssv
+                    ON wssv.wrp_service_id = wrps.id
+
                 WHERE wrp.user_id = %s;
                 """
             
@@ -2422,12 +2698,13 @@ def get_wrp_service(user_id):
                 intermediary_id,
                 lang, content,
                 iu_id, iu_intended_use_identifier,
-                pa_id, pa_format, pa_meta
+                pa_id, pa_format, pa_meta,
+                sub_entitlement, served_wrp_service_id
             ) in rows:
 
                 if wrps_id not in result:
                     result[wrps_id] = {
-                        "wrp_id": wrps_id,
+                        "wrp_service_id": wrps_id,
                         "wrp_service_trade_name": wrps_service_trade_name,
                         "wrp_service_identifier": wrps_service_identifier,
                         "wrp_service_isIntermediary": bool(wrps_isIntermediary),
@@ -2442,7 +2719,10 @@ def get_wrp_service(user_id):
 
                         "intendedUses": [],
 
-                        "provides_attestations": [] 
+                        "provides_attestations": [],
+
+                        "subEntitlements": [],
+                        "servedWRPServices": []
                     }
 
                 wrp = result[wrps_id]
@@ -2486,6 +2766,14 @@ def get_wrp_service(user_id):
                     if obj not in wrp["provides_attestations"]:
                         wrp["provides_attestations"].append(obj)
 
+                # sub entitlements
+                if sub_entitlement and sub_entitlement not in wrp["subEntitlements"]:
+                    wrp["subEntitlements"].append(sub_entitlement)
+
+                # served WRP Services
+                if served_wrp_service_id and served_wrp_service_id not in wrp["servedWRPServices"]:
+                    wrp["servedWRPServices"].append(served_wrp_service_id)
+
 
             return list(result.values())
 
@@ -2498,6 +2786,10 @@ def get_wrp_service(user_id):
             connection.close()
 
 def get_wrp_service_id(wrp_service_id):
+    # get_wrps_intended_use returns [] when the Intended Use has no service: nothing to query
+    if not wrp_service_id:
+        return []
+
     try:
         connection = conn()
         if connection:
@@ -2847,7 +3139,7 @@ def get_wrp_intended_id(intended_use_id):
                     wrp.trade_name,
                     wrp.is_psb,
                     wrp.registry_uri,
-                    wrp.is_intermediary,
+                    wrps.is_intermediary,
                     wrp.supervisory_authority_id,
 
                     su.uri,
@@ -2870,20 +3162,23 @@ def get_wrp_intended_id(intended_use_id):
 
                 FROM wallet_relying_party wrp
 
+                JOIN wallet_relying_party_service wrps
+                    ON wrps.wallet_relying_party_id = wrp.id
+
                 LEFT JOIN wrp_intended_use wiu
-                    ON wiu.wrp_id = wrp.id
+                    ON wiu.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_support_uri su
-                    ON su.wrp_id = wrp.id
+                    ON su.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_entitlement we
-                    ON we.wrp_id = wrp.id
+                    ON we.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_intermediary wi
-                    ON wi.wrp_service_id = wrp.id
+                    ON wi.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_srv_description wsd
-                    ON wsd.wrp_service_id = wrp.id
+                    ON wsd.wrp_service_id = wrps.id
 
                 LEFT JOIN multilanguage_string mls
                     ON mls.id = wsd.mls_id
@@ -2901,7 +3196,7 @@ def get_wrp_intended_id(intended_use_id):
                     ON saf.authority_id = sa.id
                     
                 LEFT JOIN wrp_provided_attestation wpa
-                    ON wrp.id = wpa.wrp_service_id
+                    ON wpa.wrp_service_id = wrps.id
                     
                 LEFT JOIN provided_attestation pa
                     ON wpa.provided_attestation_id = pa.id
@@ -3003,19 +3298,24 @@ def get_wrp_intended_id(intended_use_id):
             connection.close()
 
 ### -provided attestation-insert
-def insert_provided_attestation(format, meta, user_id):
+def insert_provided_attestation(format, meta, user_id, cursor=None):
+    insert_query = "INSERT INTO provided_attestation (" \
+    "format, " \
+    "meta, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s)"
+    params = (format, meta, user_id)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO provided_attestation (" \
-            "format, " \
-            "meta, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s)"
             
-            cursor.execute(insert_query, (format, meta, user_id))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -3098,19 +3398,24 @@ def check_provided_attestation(id):
             connection.close()
 
 ## -multilanguage string-insert
-def insert_multilanguage_string(lang, content, user_id):
+def insert_multilanguage_string(lang, content, user_id, cursor=None):
+    insert_query = "INSERT INTO multilanguage_string (" \
+    "lang, " \
+    "content, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s)"
+    params = (lang, content, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO multilanguage_string (" \
-            "lang, " \
-            "content, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s)"
             
-            cursor.execute(insert_query, (lang, content, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -3127,20 +3432,25 @@ def insert_multilanguage_string(lang, content, user_id):
             connection.close()
 
 ## -intended use-insert
-def insert_intended_use(intended_use_identifier, created_at, revoked_at, user_id):
+def insert_intended_use(intended_use_identifier, created_at, revoked_at, user_id, cursor=None):
+    insert_query = "INSERT INTO intended_use (" \
+    "intended_use_identifier, " \
+    "created_at, " \
+    "revoked_at, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s, %s)"
+    params = (intended_use_identifier, created_at, revoked_at, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO intended_use (" \
-            "intended_use_identifier, " \
-            "created_at, " \
-            "revoked_at, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s, %s)"
             
-            cursor.execute(insert_query, (intended_use_identifier, created_at, revoked_at, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -3156,18 +3466,23 @@ def insert_intended_use(intended_use_identifier, created_at, revoked_at, user_id
             cursor.close()
             connection.close()
             
-def insert_intended_use_purpose(intended_use_id, mls_id):
+def insert_intended_use_purpose(intended_use_id, mls_id, cursor=None):
+    insert_query = "INSERT INTO intended_use_purpose (" \
+    "intended_use_id, " \
+    "mls_id) " \
+    "VALUES (%s, %s)"
+    params = (intended_use_id, mls_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO intended_use_purpose (" \
-            "intended_use_id, " \
-            "mls_id) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (intended_use_id, mls_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -3183,18 +3498,23 @@ def insert_intended_use_purpose(intended_use_id, mls_id):
             cursor.close()
             connection.close()
             
-def insert_intended_use_policy(intended_use_id, policy_id):
+def insert_intended_use_policy(intended_use_id, policy_id, cursor=None):
+    insert_query = "INSERT INTO intended_use_policy (" \
+    "intended_use_id, " \
+    "policy_id) " \
+    "VALUES (%s, %s)"
+    params = (intended_use_id, policy_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO intended_use_policy (" \
-            "intended_use_id, " \
-            "policy_id) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (intended_use_id, policy_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -3210,18 +3530,23 @@ def insert_intended_use_policy(intended_use_id, policy_id):
             cursor.close()
             connection.close()
             
-def insert_intended_use_credential(intended_use_id, credential_id):
+def insert_intended_use_credential(intended_use_id, credential_id, cursor=None):
+    insert_query = "INSERT INTO intended_use_credential (" \
+    "intended_use_id, " \
+    "credential_id) " \
+    "VALUES (%s, %s)"
+    params = (intended_use_id, credential_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO intended_use_credential (" \
-            "intended_use_id, " \
-            "credential_id) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (intended_use_id, credential_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -3338,7 +3663,7 @@ def get_intended_use(user_id):
 
                     cl.path,
                     
-                    wrpiu.wrp_id
+                    wrpiu.wrp_service_id
 
                 FROM intended_use iu
 
@@ -3380,7 +3705,7 @@ def get_intended_use(user_id):
                 pol_id, policy_uri, policy_type,
                 cred_id, cred_format, cred_meta,
                 claim_path,
-                wrpiu_wrp_id
+                wrpiu_wrp_service_id
             ) in rows:
 
                 # Intended Use base
@@ -3395,7 +3720,7 @@ def get_intended_use(user_id):
                         "credentials": {},
                         "_purpose_seen": set(),
                         "_policy_seen": set(),
-                        "wrp_id": wrpiu_wrp_id
+                        "wrp_service_id": wrpiu_wrp_service_id
                     }
 
                 iu = result[iu_id]
@@ -3591,23 +3916,27 @@ def check_wrp_intendedUse(iu_id):
             connection.close()
 
 def check_wrp_wrpService(wrpService):
+    """Returns (wallet_relying_party_id,) if the service is attached to a Wallet Relying Party, [] otherwise.
+
+    A detached service (wallet_relying_party_id IS NULL, see delete_wrp_wrp_service) returns [] so it can be re-attached.
+    """
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
             query = """
-                SELECT 
+                SELECT
                     wrps.wallet_relying_party_id
 
                 FROM wallet_relying_party_service wrps
 
                 WHERE wrps.id = %s;
             """
-            
+
             cursor.execute(query, (wrpService,))
             row = cursor.fetchone()
-            if row:
+            if row and row[0] is not None:
                 return row
             else:
                 return []
@@ -3620,31 +3949,45 @@ def check_wrp_wrpService(wrpService):
             cursor.close()
             connection.close()
 
-def update_wrp_wrpService(wrp_id, wrp_service_id):
+def update_wrp_wrpService(wrp_id, wrp_service_id, cursor=None):
+    update_query = "UPDATE wallet_relying_party_service " \
+        "SET wallet_relying_party_id = %s " \
+        "WHERE id = %s"
+    params = (wrp_id, wrp_service_id,)
+
+    if cursor is not None:
+        cursor.execute(update_query, params)
+        return cursor.rowcount
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
-            insert_query = "UPDATE wallet_relying_party_service " \
-                "SET wallet_relying_party_id = %s " \
-                "WHERE id = %s"
-            
-            cursor.execute(insert_query, (wrp_id, wrp_service_id,))
-            
+            cursor.execute(update_query, params)
+
             connection.commit()
-            
-            extra = {'code'} 
-            logger.info(f"Wallet Relying Party Wallet Relying Party Service successfully added. New Wallet Relying Party Wallet Relying Party Service ID: {cursor.lastrowid}")
-            return cursor.lastrowid
+
+            extra = {'code'}
+            logger.info(f"Wallet Relying Party Service {wrp_service_id} associated with Wallet Relying Party {wrp_id}")
+            return cursor.rowcount
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
-        logger.error(f"Error inserting Wallet Relying Party Wallet Relying Party Service  : {e}")
+        extra = {'code'}
+        logger.error(f"Error associating Wallet Relying Party Service with Wallet Relying Party : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
+
+def update_wrp_wrpServices_atomic(wrp_id, wrp_service_ids):
+    """Associates several services with a Wallet Relying Party in a single transaction."""
+    with transaction() as cursor:
+        for wrp_service_id in wrp_service_ids:
+            update_wrp_wrpService(wrp_id, wrp_service_id, cursor=cursor)
+
+    logger.info(f"Wallet Relying Party Services {wrp_service_ids} associated with Wallet Relying Party {wrp_id}")
+    return len(wrp_service_ids)
 
 def get_wrp_wrpService(wrp_id):
     try:
@@ -3759,21 +4102,52 @@ def get_wrp_intendedUse(wrp_service_id):
             connection.close()
 
 def check_wrp_intermediary(intermediary_wrp_service_id):
+    """Returns True if the Wallet Relying Party Service is flagged as intermediary, False if not, None if it does not exist."""
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
             query = """
-                SELECT 
+                SELECT
+                    wrps.is_intermediary
+
+                FROM wallet_relying_party_service wrps
+
+                WHERE wrps.id = %s;
+            """
+
+            cursor.execute(query, (intermediary_wrp_service_id,))
+            row = cursor.fetchone()
+            if row:
+                return bool(row[0])
+            return None
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return None
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def check_wrp_intermediary_with_wpr(wrp_service_id, intermediary_wrp_service_id):
+    """Returns the row if the service already uses this intermediary, [] otherwise."""
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                SELECT
                     wrpi.intermediary_wrp_id
 
                 FROM wrp_intermediary wrpi
 
-                WHERE wrpi.intermediary_wrp_id = %s;
+                WHERE wrpi.intermediary_wrp_id = %s AND wrpi.wrp_service_id = %s;
             """
-            
-            cursor.execute(query, (intermediary_wrp_service_id,))
+
+            cursor.execute(query, (intermediary_wrp_service_id, wrp_service_id))
             row = cursor.fetchone()
             if row:
                 return row
@@ -3939,19 +4313,24 @@ def get_intended_use_id(intended_use_id):
             connection.close()
 
 ## -credential-insert
-def insert_credential(format, meta, user_id):
+def insert_credential(format, meta, user_id, cursor=None):
+    insert_query = "INSERT INTO credential (" \
+    "format, " \
+    "meta, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s)"
+    params = (format, meta, user_id,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO credential (" \
-            "format, " \
-            "meta, " \
-            "user_id) " \
-            "VALUES (%s, %s, %s)"
             
-            cursor.execute(insert_query, (format, meta, user_id,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -3969,63 +4348,47 @@ def insert_credential(format, meta, user_id):
 
 ## -credential-get
 def get_credentials(user_id):
+    connection = conn()
+    if connection is None:
+        raise DatabaseError("Could not connect to the database")
+ 
     try:
-        connection = conn()
-        if connection:
-            cursor = connection.cursor()
-
-            query = """
-                SELECT 
-                    c.id,
-                    c.format,
-                    c.meta,
-                    cl.id,
-                    cl.path
-
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT c.id, c.format, c.meta, cl.id, cl.path
                 FROM credential c
-
-                LEFT JOIN claim cl 
-                    ON cl.credential_id = c.id
-
+                LEFT JOIN claim cl ON cl.credential_id = c.id
                 WHERE c.user_id = %s
-            """
-
-            cursor.execute(query, (user_id,))
+                ORDER BY c.id, cl.id
+                """,
+                (user_id,),
+            )
             rows = cursor.fetchall()
-
-            result = {}
-
-            for (
-                cred_id,
-                format,
-                meta,
-                claim_id,
-                path
-            ) in rows:
-
-                if cred_id not in result:
-                    result[cred_id] = {
-                        "credential_id": cred_id,
-                        "format": format,
-                        "meta": deserialize_json(meta),
-                        "claims": []
-                    }
-
-                if claim_id:
-                    result[cred_id]["claims"].append({
-                        "claim_id": claim_id,
-                        "path": deserialize_json(path)
-                    })
-
-            return list(result.values())
-
-    except pymysql.MySQLError as e:
-        logger.error(f"Error: {e}")
-        return []
+ 
+        result = {}
+        for cred_id, format, meta, claim_id, path in rows:
+            if cred_id not in result:
+                result[cred_id] = {
+                    "credential_id": cred_id,
+                    "format": format,
+                    "meta": deserialize_json(meta),
+                    "claims": [],
+                }
+            if claim_id:
+                result[cred_id]["claims"].append({
+                    "claim_id": claim_id,
+                    "path": deserialize_json(path),
+                })
+ 
+        return list(result.values())
+ 
+    except (pymysql.MySQLError, ValueError) as e:  # ValueError: JSON inválido na BD
+        logger.error(f"Error getting credentials for user {user_id}: {e}")
+        raise DatabaseError(str(e)) from e
+ 
     finally:
-        if connection:
-            cursor.close()
-            connection.close()
+        connection.close()
 
 def check_credentials(id):
     try:
@@ -4058,18 +4421,23 @@ def check_credentials(id):
             connection.close()
 
 ## -claim-insert 
-def insert_claim(credential_id, path):
+def insert_claim(credential_id, path, cursor=None):
+    insert_query = "INSERT INTO claim (" \
+    "credential_id, " \
+    "path) " \
+    "VALUES (%s, %s)"
+    params = (credential_id, path,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
-
-            insert_query = "INSERT INTO claim (" \
-            "credential_id, " \
-            "path) " \
-            "VALUES (%s, %s)"
             
-            cursor.execute(insert_query, (credential_id, path,))
+            cursor.execute(insert_query, params)
             
             connection.commit()
             
@@ -4094,8 +4462,14 @@ def search_wrp_public(
     providesattestation=None,
     intendeduseidentifier=None,
     isintermediary=None,
-    usesintermediary=None
+    usesintermediary=None,
+    wrp_ids=None
 ):
+    """Public Wallet Relying Party projection (GET /wrp).
+
+    wrp_ids (internal, not a query parameter) restricts the result to those Wallet Relying Parties;
+    GET /wrp/{identifier} uses it so both endpoints return the same object.
+    """
     try:
         connection = conn()
         if not connection:
@@ -4107,7 +4481,7 @@ def search_wrp_public(
             SELECT 
                 wrp.id,
                 wrp.trade_name,
-                wrp.is_intermediary,
+                wrps.is_intermediary,
 
                 mls.lang,
                 mls.content,
@@ -4122,14 +4496,17 @@ def search_wrp_public(
 
             FROM wallet_relying_party wrp
 
+            LEFT JOIN wallet_relying_party_service wrps
+                ON wrps.wallet_relying_party_id = wrp.id
+
             LEFT JOIN wrp_srv_description wsd
-                ON wsd.wrp_service_id = wrp.id
+                ON wsd.wrp_service_id = wrps.id
 
             LEFT JOIN multilanguage_string mls
                 ON mls.id = wsd.mls_id
 
             LEFT JOIN wrp_entitlement we
-                ON we.wrp_id = wrp.id
+                ON we.wrp_service_id = wrps.id
 
             LEFT JOIN provider p
                 ON p.id = wrp.provider_id
@@ -4141,10 +4518,10 @@ def search_wrp_public(
                 ON pol.id = pp.policy_id
 
             LEFT JOIN wrp_intermediary wi
-                ON wi.wrp_id = wrp.id
+                ON wi.wrp_service_id = wrps.id
 
             LEFT JOIN wrp_provided_attestation wrppa
-                on wrppa.wrp_id = wrp.id
+                ON wrppa.wrp_service_id = wrps.id
 
             LEFT JOIN provided_attestation pa
                 ON pa.id = wrppa.provided_attestation_id
@@ -4156,20 +4533,33 @@ def search_wrp_public(
 
         # filters
 
+        if wrp_ids is not None:
+            if not wrp_ids:
+                return []
+            query += " AND wrp.id IN (" + ", ".join(["%s"] * len(wrp_ids)) + ")"
+            params.extend(wrp_ids)
+
         if tradename:
             query += " AND wrp.trade_name LIKE %s"
             params.append(f"%{tradename}%")
 
         if isintermediary is not None:
-            query += " AND wrp.is_intermediary = %s"
+            query += """
+                AND wrp.id IN (
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    WHERE s.is_intermediary = %s
+                )
+            """
             params.append(isintermediary)
 
         if entitlement:
             query += """
                 AND wrp.id IN (
-                    SELECT wrp_id 
-                    FROM wrp_entitlement
-                    WHERE entitlement LIKE %s
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    JOIN wrp_entitlement we2 ON we2.wrp_service_id = s.id
+                    WHERE we2.entitlement LIKE %s
                 )
             """
             params.append(f"%{entitlement}%")
@@ -4191,10 +4581,12 @@ def search_wrp_public(
         if providesattestation:
             query += """
                 AND wrp.id IN (
-                    SELECT wrppa.wrp_id
-                    FROM wrp_provided_attestation wrppa
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    JOIN wrp_provided_attestation wrppa2
+                        ON wrppa2.wrp_service_id = s.id
                     JOIN provided_attestation pa 
-                        ON pa.id = wrppa.provided_attestation_id
+                        ON pa.id = wrppa2.provided_attestation_id
                     WHERE pa.format LIKE %s
                 )
             """
@@ -4203,10 +4595,12 @@ def search_wrp_public(
         if intendeduseidentifier:
             query += """
                 AND wrp.id IN (
-                    SELECT wi.wrp_id
-                    FROM wrp_intended_use wi
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    JOIN wrp_intended_use wiu2
+                        ON wiu2.wrp_service_id = s.id
                     JOIN intended_use iu 
-                        ON iu.id = wi.intended_use_id
+                        ON iu.id = wiu2.intended_use_id
                     WHERE iu.intended_use_identifier LIKE %s
                 )
             """
@@ -4216,13 +4610,18 @@ def search_wrp_public(
             if usesintermediary:
                 query += """
                     AND wrp.id IN (
-                        SELECT wrp_id FROM wrp_intermediary
+                        SELECT s.wallet_relying_party_id
+                        FROM wallet_relying_party_service s
+                        JOIN wrp_intermediary wi2 ON wi2.wrp_service_id = s.id
                     )
                 """
             else:
                 query += """
                     AND wrp.id NOT IN (
-                        SELECT wrp_id FROM wrp_intermediary
+                        SELECT s.wallet_relying_party_id
+                        FROM wallet_relying_party_service s
+                        JOIN wrp_intermediary wi2 ON wi2.wrp_service_id = s.id
+                        WHERE s.wallet_relying_party_id IS NOT NULL
                     )
                 """
 
@@ -4279,12 +4678,18 @@ def search_wrp_public(
                     "srvDescription": [],
                     "entitlements": [],
                     "providesAttestations": [],
-                    "isIntermediary": bool(is_intermediary) if is_intermediary is not None else None,
+                    "isIntermediary": None,
                     "usesIntermediary": None,
                     "policyURI": None
                 }
 
             wrp = result[wrp_id]
+
+            # isIntermediary: True if any of the WRP services is an intermediary
+            if is_intermediary:
+                wrp["isIntermediary"] = True
+            elif is_intermediary is not None and wrp["isIntermediary"] is None:
+                wrp["isIntermediary"] = False
 
             # srvDescription
             if lang and content:
@@ -4347,6 +4752,7 @@ def get_wrp_by_identifier(identifier):
             JOIN identifier i ON i.id = lei.identifier_id
 
             WHERE i.identifier = %s
+            ORDER BY wrp.id
         """
 
         cursor.execute(query, (identifier,))
@@ -4357,7 +4763,8 @@ def get_wrp_by_identifier(identifier):
 
         wrp_id = row[0]
 
-        return get_wrp_id(wrp_id)
+        # same projection as GET /wrp
+        return search_wrp_public(wrp_ids=[wrp_id])
 
     except Exception as e:
         logger.error(e)
@@ -4387,8 +4794,10 @@ def check_intended_use(
             JOIN identifier i 
                 ON i.id = lei.identifier_id
 
+            JOIN wallet_relying_party_service wrps
+                ON wrps.wallet_relying_party_id = wrp.id
             JOIN wrp_intended_use wi 
-                ON wi.wrp_id = wrp.id
+                ON wi.wrp_service_id = wrps.id
             JOIN intended_use iu 
                 ON iu.id = wi.intended_use_id
 
@@ -4521,3 +4930,56 @@ def insert_registration_certificate(
         if connection:
             cursor.close()
             connection.close()
+
+def insert_credentials_with_claims(credentials, user_id):
+    credential_ids = []
+
+    try:
+        with transaction() as cursor:
+            for credential in credentials:
+                credential_id = insert_credential(credential["format"], credential["meta"], user_id, cursor=cursor)
+
+                for path in credential["paths"]:
+                    insert_claim(credential_id, path, cursor=cursor)
+
+                credential_ids.append(credential_id)
+    except DuplicateError as e:
+        raise DuplicateCredentialError(str(e)) from e
+
+    logger.info(f"Credentials successfully added. IDs: {credential_ids}")
+    return credential_ids
+
+def get_claim(user_id):
+    connection = conn()
+    if connection is None:
+        raise DatabaseError("Could not connect to the database")
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT cl.id, cl.credential_id, cl.path
+                FROM claim cl
+                JOIN credential c ON c.id = cl.credential_id
+                WHERE c.user_id = %s
+                ORDER BY cl.credential_id, cl.id
+                """,
+                (user_id,),
+            )
+            rows = cursor.fetchall()
+
+        return [
+            {
+                "claim_id": claim_id,
+                "credential_id": credential_id,
+                "path": deserialize_json(path),
+            }
+            for claim_id, credential_id, path in rows
+        ]
+
+    except (pymysql.MySQLError, ValueError) as e:
+        logger.error(f"Error getting claims for user {user_id}: {e}")
+        raise DatabaseError(str(e)) from e
+
+    finally:
+        connection.close()

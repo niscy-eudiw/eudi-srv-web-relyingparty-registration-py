@@ -128,6 +128,34 @@ def validate_required_fields(data, required_fields):
 
     return missing
 
+def is_int(value):
+    # bool is a subclass of int, so reject it explicitly
+    return isinstance(value, int) and not isinstance(value, bool)
+
+def is_id(value):
+    return is_int(value) and value > 0
+
+def is_str(value):
+    return isinstance(value, str)
+
+def is_non_blank_str(value):
+    return isinstance(value, str) and value.strip() != ""
+
+def is_list_of(value, check):
+    return isinstance(value, list) and all(check(item) for item in value)
+
+TYPE_NAMES = {str: "a string", int: "an integer", bool: "a boolean", list: "an array", dict: "an object"}
+
+def check_field_types(item, types):
+    for field, expected in types.items():
+        value = item.get(field)
+        if value is None:
+            continue
+        valid = is_int(value) if expected is int else isinstance(value, expected)
+        if not valid:
+            return error_invalid(f"Field '{field}' must be {TYPE_NAMES[expected]}.")
+    return None
+
 def error_response(message, missing_fields=None, code=400):
     return {
         "status": "error",
@@ -270,6 +298,8 @@ def authentication():
         + response["client_id"]
         + "&request_uri="
         + response["request_uri"]
+        + "&request_uri_method="
+        + response["request_uri_method"]
     )
 
     
@@ -329,8 +359,7 @@ def getpidoid4vp():
     else:
         presentation_id = request.args.get("presentation_id")
           
-        url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id + "?nonce=hiCV7lZi5qAeCy7NFzUWSR4iCfSmRb99HfIvCkPaCLc="
-    
+        url = "https://" + cfgserv.url_verifier +"/ui/presentations/" + presentation_id 
     headers = {
     'Content-Type': 'application/json',
     }
@@ -388,29 +417,47 @@ def create_law():
     hash_pid = data.get("hash_pid")
     laws = data.get("law", [])
 
+    if not isinstance(laws, list):
+        return error_invalid("Field 'law' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
-    for law in laws: 
+    for law in laws:
+        if not isinstance(law, dict):
+            return error_invalid("Each law must be an object.")
+
         missing = validate_required_fields(law, ["legislativeIdentifier"])
         if missing:
             return error_response("Missing required fields.", missing)
-    
-    for law in laws:
-        legislativeIdentifier = law.get("legislativeIdentifier")
-        legalBasis = law.get("legalBasis", [])
 
-        law_id = db.insert_law(legislativeIdentifier, user_id)
-        result.append(law_id)
+        error = check_field_types(law, {"legislativeIdentifier": str})
+        if error:
+            return error
 
-        for aux in legalBasis:
-            if aux:
-                db.insert_law_legal_basis(law_id, aux)
+        if not is_list_of(law.get("legalBasis") or [], is_non_blank_str):
+            return error_invalid("Field 'legalBasis' must be an array of non-empty strings.")
 
-    return create_response("Law created successfully", "Law new ids:", result)
+        law["legalBasis"] = [value.strip() for value in law.get("legalBasis") or []]
+
+    try:
+        with db.transaction() as cursor:
+            for law in laws:
+                legislativeIdentifier = law.get("legislativeIdentifier")
+                legalBasis = law.get("legalBasis") or []
+
+                law_id = db.insert_law(legislativeIdentifier, user_id, cursor=cursor)
+                result.append(law_id)
+
+                for aux in legalBasis:
+                    db.insert_law_legal_basis(law_id, aux, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Law created successfully", "Law ids", result)
 
 @rpr.route('/law/list', methods=['POST'])
 def list_law():
@@ -450,40 +497,95 @@ def create_legal_person():
     hash_pid = data.get("hash_pid")
     legalPersons = data.get("legalPerson", [])
 
+    if not isinstance(legalPersons, list):
+        return error_invalid("Field 'legalPerson' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
     
     result = []
 
+    to_insert = []
+
     #verification
     for legalPerson in legalPersons:
-        missing = validate_required_fields(legalPerson, ["legalName"])
+
+        if not isinstance(legalPerson, dict):
+            return error_invalid(
+                "Each legalPerson must be an object."
+            )
+
+        missing = validate_required_fields(
+            legalPerson,
+            ["legalName"]
+        )
+
         if missing:
-            return error_response("Missing required fields.", missing)
-        
-        laws = legalPerson.get("law", [])
+            return error_response(
+                "Missing required fields.",
+                missing
+            )
+
+        legal_names = legalPerson.get("legalName", [])
+
+        if not isinstance(legal_names, list):
+            return error_invalid(
+                "legalName must be a list."
+            )
+
+        if not legal_names:
+            return error_invalid(
+                "legalName must contain at least one name."
+            )
+
+        clean_legal_names = []
+
+        for legal_name in legal_names:
+
+            if not isinstance(legal_name, str):
+                return error_invalid(
+                    "Each legalName must be a string."
+                )
+
+            legal_name = legal_name.strip()
+
+            if not legal_name:
+                return error_invalid(
+                    "legalName cannot be empty or contain only whitespace."
+                )
+
+            clean_legal_names.append(legal_name)
+
+        laws = legalPerson.get("law") or []
+
+        if not is_list_of(laws, is_id):
+            return error_invalid("Field 'law' must be an array of positive integers.")
+
         for law in laws:
-            if law:
-                if user_id != db.check_law(law):
-                    return error_invalid(f"law id {law} doesn't belong to this user")
-    
+            if user_id != db.check_law(law):
+                return error_invalid(
+                    f"law id {law} doesn't belong to this user"
+                )
+
+        to_insert.append({"legalNames": clean_legal_names, "laws": laws})
+
     #inserts data base
-    for legalPerson in legalPersons:
-        legalNames = legalPerson.get("legalName", [])
-        laws = legalPerson.get("law", [])
+    try:
+        with db.transaction() as cursor:
+            for legalPerson in to_insert:
+                legal_person_id = db.insert_legal_person(user_id, cursor=cursor)
+                result.append(legal_person_id)
 
-        legal_person_id = db.insert_legal_person(user_id)
-        result.append(legal_person_id)
-        
-        for legalName in legalNames:
-            db.insert_legal_person_name(legal_person_id, legalName)
-        
-        for law in laws:
-            if law:
-                db.associate_legal_person_law(legal_person_id, law)
+                for legalName in legalPerson["legalNames"]:
+                    db.insert_legal_person_name(legal_person_id, legalName, cursor=cursor)
 
-    return create_response("Legal Person created successfully", "Legal person new ids:", result)
+                for law in legalPerson["laws"]:
+                    db.associate_legal_person_law(legal_person_id, law, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Legal Person created successfully", "Legal Person ids", result)
 
 @rpr.route('/legal_person/list', methods=['POST'])
 def list_legal_person():
@@ -592,29 +694,46 @@ def create_natural_person():
     hash_pid = data.get("hash_pid")
     naturalPersons = data.get("naturalPerson", [])
 
+    if not isinstance(naturalPersons, list):
+        return error_invalid("Field 'naturalPerson' must be an array.")
+
     user_id = db.check_user(hash_pid)
     result = []
 
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     #verification
     for naturalPerson in naturalPersons:
+        if not isinstance(naturalPerson, dict):
+            return error_invalid("Each naturalPerson must be an object.")
+
         missing = validate_required_fields(naturalPerson, ["familyName", "givenName"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
-    #insert data base    
-    for naturalPerson in naturalPersons:
-        family_name = naturalPerson.get("familyName")
-        given_name = naturalPerson.get("givenName")
-        date_of_birth = naturalPerson.get("dateOfBirth")
-        place_of_birth = naturalPerson.get("placeOfBirth")
 
-        natural_person_id = db.insert_natural_person(family_name, given_name, date_of_birth, place_of_birth, user_id)
-        result.append(natural_person_id)
+        error = check_field_types(
+            naturalPerson,
+            {"familyName": str, "givenName": str, "dateOfBirth": str, "placeOfBirth": str}
+        )
+        if error:
+            return error
 
-    return create_response("Natural Person created successfully", "Natural person new ids", result)
+    #insert data base
+    try:
+        with db.transaction() as cursor:
+            for naturalPerson in naturalPersons:
+                family_name = naturalPerson.get("familyName")
+                given_name = naturalPerson.get("givenName")
+                date_of_birth = naturalPerson.get("dateOfBirth")
+                place_of_birth = naturalPerson.get("placeOfBirth")
+
+                natural_person_id = db.insert_natural_person(family_name, given_name, date_of_birth, place_of_birth, user_id, cursor=cursor)
+                result.append(natural_person_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Natural Person created successfully", "Natural Person ids", result)
 
 @rpr.route('/natural_person/list', methods=['POST'])
 def get_natural_person():
@@ -654,31 +773,45 @@ def create_identifier():
     hash_pid = data.get("hash_pid")
     identifiers = data.get("identifier", [])
 
+    if not isinstance(identifiers, list):
+        return error_invalid("Field 'identifier' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #verification
     for identifier in identifiers:
+        if not isinstance(identifier, dict):
+            return error_invalid("Each identifier must be an object.")
+
         missing = validate_required_fields(identifier, ["identifier", "type"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
+
+        error = check_field_types(identifier, {"identifier": str, "type": str})
+        if error:
+            return error
+
         type = identifier.get("type")
         if type not in cfgserv.legal_entity_type_identifier["Type of Identifier"]:
             return error_invalid(f"Invalid type_of_identifier. Must be one of: {', '.join(cfgserv.legal_entity_type_identifier['Type of Identifier'])}")
 
     #insert data base
-    for identifier in identifiers:
-        identifier_value = identifier.get("identifier")
-        type = identifier.get("type")
+    try:
+        with db.transaction() as cursor:
+            for identifier in identifiers:
+                identifier_value = identifier.get("identifier")
+                type = identifier.get("type")
 
-        identifier_id = db.insert_identifier(identifier_value, type, user_id)
-        result.append(identifier_id)
+                identifier_id = db.insert_identifier(identifier_value, type, user_id, cursor=cursor)
+                result.append(identifier_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-    return create_response("Identifier created successfully", "Identifiers new ids", result)
+    return create_response("Identifier created successfully", "Identifier ids", result)
 
 @rpr.route('/identifier/list', methods=['POST'])
 def list_identifier():
@@ -718,21 +851,44 @@ def create_legal_entity():
     hash_pid = data.get("hash_pid")
     legal_entity = data.get("legal_entity")
 
+    if not isinstance(legal_entity, list):
+        return error_invalid("Field 'legal_entity' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #verification
     for aux in legal_entity:
+        if not isinstance(aux, dict):
+            return error_invalid("Each legal_entity must be an object.")
+
         missing = validate_required_fields(aux, ["identifiers", "country"])
         if missing:
             return error_response("Missing required fields.", missing)
 
+        error = check_field_types(aux, {"legal_person_id": int, "natural_person_id": int, "country": str})
+        if error:
+            return error
+
+        for field in ("legal_person_id", "natural_person_id"):
+            if aux.get(field) is not None and not is_id(aux[field]):
+                return error_invalid(f"Field '{field}' must be a positive integer.")
+
+        if not is_list_of(aux["identifiers"], is_id):
+            return error_invalid("Field 'identifiers' must be an array of positive integers.")
+
+        for field in ("postalAddress", "email", "phone", "infoURI"):
+            if not is_list_of(aux.get(field) or [], is_non_blank_str):
+                return error_invalid(f"Field '{field}' must be an array of non-empty strings.")
+
+            aux[field] = [value.strip() for value in aux.get(field) or []]
+
         legal_person_id = aux.get("legal_person_id")
         natural_person_id = aux.get("natural_person_id")
-        identifier_ids = aux.get("identifiers", [])
+        identifier_ids = aux["identifiers"]
         country = aux.get("country")
 
         if legal_person_id and natural_person_id:
@@ -756,39 +912,39 @@ def create_legal_entity():
                 return error_invalid(f"The identifier ID {identifier_id} does not belong to this user")
 
     #insert data base
-    for aux in legal_entity:
-        identifier_ids = aux.get("identifiers", [])
-        postalAddress = aux.get("postalAddress", [])
-        country = aux.get("country")
-        emails = aux.get("email", [])
-        phones = aux.get("phone", [])
-        infoURIs = aux.get("infoURI", [])
-        legal_person_id = aux.get("legal_person_id")
-        natural_person_id = aux.get("natural_person_id")
+    try:
+        with db.transaction() as cursor:
+            for aux in legal_entity:
+                identifier_ids = aux["identifiers"]
+                postalAddress = aux.get("postalAddress") or []
+                country = aux.get("country")
+                emails = aux.get("email") or []
+                phones = aux.get("phone") or []
+                infoURIs = aux.get("infoURI") or []
+                legal_person_id = aux.get("legal_person_id")
+                natural_person_id = aux.get("natural_person_id")
 
-        legal_entity_id = db.insert_legal_entity(legal_person_id, natural_person_id, country, user_id)
-        result.append(legal_entity_id)
+                legal_entity_id = db.insert_legal_entity(legal_person_id, natural_person_id, country, user_id, cursor=cursor)
+                result.append(legal_entity_id)
 
-        for identifier_id in identifier_ids:
-            db.insert_legal_entity_identifier(legal_entity_id, identifier_id)
+                for identifier_id in identifier_ids:
+                    db.insert_legal_entity_identifier(legal_entity_id, identifier_id, cursor=cursor)
 
-        if postalAddress:
-            for aux in postalAddress:
-                db.insert_legal_entity_postal_address(legal_entity_id, aux)
-        
-        if emails:
-            for email in emails:
-                db.insert_legal_entity_email(legal_entity_id, email)
-        
-        if phones:
-            for phone in phones:
-                db.insert_legal_entity_phone(legal_entity_id, phone)
+                for address in postalAddress:
+                    db.insert_legal_entity_postal_address(legal_entity_id, address, cursor=cursor)
 
-        if  infoURIs:
-            for infoURI in infoURIs:
-                db.insert_legal_entity_info_uri(legal_entity_id, infoURI)
+                for email in emails:
+                    db.insert_legal_entity_email(legal_entity_id, email, cursor=cursor)
 
-    return create_response("Legal Entity created successfully.", "legal Entity id:", result)
+                for phone in phones:
+                    db.insert_legal_entity_phone(legal_entity_id, phone, cursor=cursor)
+
+                for infoURI in infoURIs:
+                    db.insert_legal_entity_info_uri(legal_entity_id, infoURI, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
+
+    return create_response("Legal Entity created successfully.", "Legal Entity ids", result)
 
 @rpr.route('/legal_entity/list', methods=['POST'])
 def list_legal_entity():
@@ -923,17 +1079,27 @@ def create_policy():
     hash_pid = data.get("hash_pid")
     policies = data.get("policy", [])
 
+    if not isinstance(policies, list):
+        return error_invalid("Field 'policy' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #verification
     for policy in policies:
+        if not isinstance(policy, dict):
+            return error_invalid("Each policy must be an object.")
+
         missing = validate_required_fields(policy, ["policyURI", "type", "intention"])
         if missing:
             return error_response("Missing required fields.", missing)
+
+        error = check_field_types(policy, {"policyURI": str, "type": str, "intention": str})
+        if error:
+            return error
 
         type = policy.get("type")
         intention = policy.get("intention")
@@ -950,14 +1116,18 @@ def create_policy():
                 return error_invalid(f"Invalid 'intended_use' type_policy. Must be one of: {', '.join(cfgserv.intended_use['Type of Privacy Policy'])}")
 
     #insert data base
-    for policy in policies:
-        policyURI = policy.get("policyURI")
-        type = policy.get("type")
+    try:
+        with db.transaction() as cursor:
+            for policy in policies:
+                policyURI = policy.get("policyURI")
+                type = policy.get("type")
 
-        policy_id = db.insert_policy(policyURI, type, user_id)
-        result.append(policy_id)
+                policy_id = db.insert_policy(policyURI, type, user_id, cursor=cursor)
+                result.append(policy_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-    return create_response("Policy created successfully", "Policies IDs:", result)
+    return create_response("Policy created successfully", "Policy ids", result)
 
 @rpr.route('/policy/list', methods=['POST'])
 def list_policy():
@@ -978,7 +1148,7 @@ def list_policy():
 
     result = db.get_policy(user_id)
 
-    return create_response("Policies retrieved successfully.", "policy", result)
+    return list_response("Policies retrieved successfully.", result, "policy")
 
 ## -provider
 @rpr.route('/provider/create', methods=['POST'])
@@ -996,6 +1166,9 @@ def create_provider():
     hash_pid = data.get("hash_pid")
     providers = data.get("provider", [])
 
+    if not isinstance(providers, list):
+        return error_invalid("'provider' must be a list.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
@@ -1004,15 +1177,30 @@ def create_provider():
 
     #validation
     for provider in providers:
-        missing = validate_required_fields(provider, ["policy_id", "providerType"])
+        if not isinstance(provider, dict):
+            return error_invalid("Each provider must be an object.")
+        
+        missing = validate_required_fields(provider, ["legalEntityId", "policy_id", "providerType"])
         if missing:
             return error_response("Missing required fields.", missing)
 
-        policy_ids = provider.get("policy_id", [])
+        error = check_field_types(provider, {"providerType": str})
+        if error:
+            return error
+
+        if not is_list_of(provider["policy_id"], is_id):
+            return error_invalid("Field 'policy_id' must be an array of positive integers.")
+
+        if not is_list_of(provider.get("x5c") or [], is_non_blank_str):
+            return error_invalid("Field 'x5c' must be an array of non-empty strings.")
+
+        provider["x5c"] = [value.strip() for value in provider.get("x5c") or []]
+
+        policy_ids = provider["policy_id"]
         for policy_id in policy_ids:
             row = db.check_policy(policy_id)
 
-            if not row:
+            if not row or row[0] is None:
                 return error_invalid(f"Policy {policy_id} not found")
             if user_id[0] != row[0]:
                 return error_invalid(f"The Policy ID {policy_id} does not belong to this user")
@@ -1021,27 +1209,36 @@ def create_provider():
                 return error_invalid(f"The policy has an incorrect type; it must be a policy with a type for 'Wallet Relying Party'(intention: wrp). Must be one of: {', '.join(cfgserv.relying_party['Type of Policy'])}")
 
         legalEntityId = provider.get("legalEntityId")
+        
+        if not is_id(legalEntityId):
+            return error_invalid("Field 'legalEntityId' must be a positive integer.")
+
         if user_id != db.check_legal_entity(legalEntityId):
-            return error_invalid(f"The Legal Entity ID {legalEntityId} does not belong to this user")
+            return error_invalid(
+                f"The Legal Entity ID {legalEntityId} does not belong to this user"
+            )
             
     #insert data base
-    for provider in providers:
-        legalEntityId = provider.get("legalEntityId")
-        providerType = provider.get("providerType")
-        x5c = provider.get("x5c", [])
-        policy_ids = provider.get("policy_id", [])
+    try:
+        with db.transaction() as cursor:
+            for provider in providers:
+                legalEntityId = provider.get("legalEntityId")
+                providerType = provider.get("providerType")
+                x5c = provider.get("x5c") or []
+                policy_ids = provider["policy_id"]
 
-        provider_id = db.insert_provider(legalEntityId, providerType, user_id)
-        result.append(provider_id)
+                provider_id = db.insert_provider(legalEntityId, providerType, user_id, cursor=cursor)
+                result.append(provider_id)
 
-        for policy_id in policy_ids:
-            db.insert_provider_policy(provider_id, policy_id)
+                for policy_id in policy_ids:
+                    db.insert_provider_policy(provider_id, policy_id, cursor=cursor)
 
-        for cert in x5c:
-            if cert:
-                db.insert_provider_x5c(provider_id, cert)
+                for cert in x5c:
+                    db.insert_provider_x5c(provider_id, cert, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-    return create_response("Provider created successfully", "Provider id", result)
+    return create_response("Provider created successfully", "Provider ids", result)
 
 
 @rpr.route('/provider/list', methods=['POST'])
@@ -1163,88 +1360,119 @@ def remove_provider_policy():
     )
 
 ## -credential
+def error_server(message="Internal server error. Please try again later.", code=500):
+    return {
+        "status": "error",
+        "code": code,
+        "message": message
+    }, code
+
+def db_write_error(e, server_message="Database error. No data was saved."):
+    if isinstance(e, db.DuplicateError):
+        return error_invalid("A record with these values already exists. No data was saved.", code=409)
+    if isinstance(e, db.InvalidDataError):
+        return error_invalid("Invalid data for one or more fields. No data was saved.")
+    return error_server(server_message)
+
 @rpr.route('/credential/create', methods=['POST'])
 def create_credential():
-
+ 
     data = request.get_json(silent=True)
     if not data:
         return error_response("Invalid or missing JSON body")
-
+ 
     missing = validate_required_fields(data, ["hash_pid", "credentials"])
     if missing:
         return error_response("Missing required fields.", missing)
-
+ 
     hash_pid = data.get("hash_pid")
     credentials = data.get("credentials", [])
-
+ 
+    if not isinstance(credentials, list):
+        return error_response("Field 'credentials' must be an array.")
+ 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
-    result = []
-
+ 
     #verification
     for credential in credentials:
+        if not isinstance(credential, dict):
+            return error_response("Each credential must be an object.")
+ 
         missing = validate_required_fields(credential, ["format", "meta", "claims"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
-        if not isinstance(credential["meta"], dict):
-            return error_response(
-                "Field 'meta' must be an object."
+ 
+        if credential["format"] not in cfgserv.formats["SUPPORTED_FORMATS"]:
+            return error_invalid(
+                f"Invalid credential format. Must be one of: "
+                f"{', '.join(cfgserv.formats['SUPPORTED_FORMATS'])}"
             )
-        
-        claims = credential.get("claims", [])
-        for claim in claims:
+ 
+        if not isinstance(credential["meta"], dict):
+            return error_response("Field 'meta' must be an object.")
+ 
+        if not isinstance(credential["claims"], list):
+            return error_response("Field 'claims' must be an array.")
+ 
+        for claim in credential["claims"]:
+            if not isinstance(claim, dict):
+                return error_response("Each claim must be an object.")
+ 
             missing = validate_required_fields(claim, ["path"])
             if missing:
                 return error_response("Missing required fields.", missing)
-
+ 
             if not isinstance(claim["path"], list):
-                return error_response(
-                    "Field 'path' must be an array."
-                )
-
+                return error_response("Field 'path' must be an array.")
+ 
             if len(claim["path"]) == 0:
-                return error_response(
-                    "Field 'path' cannot be empty."
-                )
-
-    #insert data base
-    for credential in credentials:
-        format = credential.get("format")
-        meta = serialize_json(credential["meta"])
-        claims = credential.get("claims", [])
-        
-        credential_id = db.insert_credential(format, meta, user_id)
-        result.append(credential_id)
-
-        for claim in claims:
-            path = serialize_json(claim["path"])
-
-            db.insert_claim(credential_id, path)
-    
-    return create_response("Credential created successfully", "Credentials ids", result)
+                return error_response("Field 'path' cannot be empty.")
+            
+    to_insert = [
+        {
+            "format": credential["format"],
+            "meta": serialize_json(credential["meta"]),
+            "paths": [serialize_json(claim["path"]) for claim in credential["claims"]],
+        }
+        for credential in credentials
+    ]
+ 
+    try:
+        result = db.insert_credentials_with_claims(to_insert, user_id)
+    except db.DuplicateCredentialError:
+        return error_invalid(
+            "A credential with this format already exists for this user.",
+            code=409
+        )
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error creating credentials. No data was saved.")
+ 
+    return create_response("Credential created successfully", "Credential ids", result)
 
 @rpr.route('/credential/list', methods=['POST'])
 def list_credential():
     data = request.get_json(silent=True)
-    
+ 
     if not data:
         return error_response("Invalid or missing JSON body")
-
+ 
     missing = validate_required_fields(data, ["hash_pid"])
     if missing:
         return error_response("Missing required fields.", missing)
-
+ 
     hash_pid = data.get("hash_pid")
-    
+ 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
-    result = db.get_credentials(user_id)
-
+ 
+    try:
+        result = db.get_credentials(user_id)
+    except db.DatabaseError:
+        return error_server("Error retrieving credentials.")
+ 
     return list_response("Credentials retrieved successfully.", result, "credential")
 
 ## -intended use
@@ -1263,79 +1491,178 @@ def create_intended_use():
     hash_pid = data.get("hash_pid")
     intended_uses = data.get("intended_uses", [])
 
+    if not isinstance(intended_uses, list):
+        return error_invalid("Field 'intended_uses' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
 
     #validation
     for intended_use in intended_uses:
-        missing = validate_required_fields(intended_use, ["intendedUseIdentifier", "createdAt", "revokedAt", "purpose", "privacyPolicy_id", "credential_ids"])
+
+        if not isinstance(intended_use, dict):
+            return error_invalid("Each intended use must be an object.")
+
+        missing = validate_required_fields(
+            intended_use,
+            [
+                "intendedUseIdentifier",
+                "createdAt",
+                "revokedAt",
+                "purpose",
+                "privacyPolicy_id",
+                "credential_ids"
+            ]
+        )
+
         if missing:
-            return error_response("Missing required fields.", missing)
-        
+            return error_response(
+                "Missing required fields.",
+                missing
+            )
+
+        error = check_field_types(
+            intended_use,
+            {
+                "intendedUseIdentifier": str,
+                "createdAt": str,
+                "revokedAt": str,
+                "purpose": list
+            }
+        )
+
+        if error:
+            return error
+
+        for field in ("privacyPolicy_id", "credential_ids"):
+            if not is_list_of(intended_use[field], is_id):
+                return error_invalid(f"Field '{field}' must be an array of positive integers.")
+
+        created_at = intended_use.get("createdAt")
+        revoked_at = intended_use.get("revokedAt")
+
+        try:
+            created_at_date = datetime.strptime(
+                created_at,
+                "%Y-%m-%d"
+            ).date()
+
+            revoked_at_date = datetime.strptime(
+                revoked_at,
+                "%Y-%m-%d"
+            ).date()
+
+        except (TypeError, ValueError):
+            return error_invalid(
+                "createdAt and revokedAt must be valid dates in YYYY-MM-DD format."
+            )
+
+        if revoked_at_date <= created_at_date:
+            return error_invalid(
+                "revokedAt cannot be earlier than createdAt."
+            )
+
         purposes = intended_use.get("purpose", [])
+
         for purpose in purposes:
-            missing = validate_required_fields(purpose, ["lang", "content"])
+            if not isinstance(purpose, dict):
+                return error_invalid("Each purpose must be an object.")
+
+            missing = validate_required_fields(
+                purpose,
+                ["lang", "content"]
+            )
+
             if missing:
-                return error_response("Missing required fields.", missing)
-            
+                return error_response(
+                    "Missing required fields.",
+                    missing
+                )
+
+            error = check_field_types(purpose, {"lang": str, "content": str})
+            if error:
+                return error
+
             lang = purpose.get("lang")
-            
+
             if lang not in cfgserv.eu_languages:
-                return error_invalid(f"Invalid purpose_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
-        
-        privacyPolicy_ids = intended_use.get("privacyPolicy_id", [])
+                return error_invalid(
+                    f"Invalid purpose_lang. Must be one of: "
+                    f"{', '.join(cfgserv.eu_languages)}"
+                )
+
+        privacyPolicy_ids = intended_use.get(
+            "privacyPolicy_id",
+            []
+        )
+
         for privacyPolicy_id in privacyPolicy_ids:
             row = db.check_policy(privacyPolicy_id)
-            
-            if user_id[0] != row[0]:
-                return error_invalid(f"The Policy ID {privacyPolicy_id} does not belong to this user")
-            
-            if row[1] not in cfgserv.intended_use["Type of Privacy Policy"]:
-                return error_invalid( f"The policy has an incorrect type; it must be a policy with a type for 'Wallet Relying Party'(intention: wrp). Must be one of: {', '.join(cfgserv.relying_party['Type of Policy'])}")
 
-        credential_ids = intended_use.get("credential_ids", [])
+            if not row or row[0] is None:
+                return error_invalid(f"Policy {privacyPolicy_id} not found")
+
+            if user_id[0] != row[0]:
+                return error_invalid(
+                    f"The Policy ID {privacyPolicy_id} "
+                    f"does not belong to this user"
+                )
+
+            if row[1] not in cfgserv.intended_use[
+                "Type of Privacy Policy"
+            ]:
+                return error_invalid(
+                    "The policy has an incorrect type; it must be "
+                    "a policy with a type for 'Wallet Relying Party' "
+                    "(intention: wrp). Must be one of: "
+                    f"{', '.join(cfgserv.relying_party['Type of Policy'])}"
+                )
+
+        credential_ids = intended_use.get(
+            "credential_ids",
+            []
+        )
+
         for credential_id in credential_ids:
             if user_id != db.check_credentials(credential_id):
-                return error_invalid(f"The Credential ID {credential_id} does not belong to this user.")
+                return error_invalid(
+                    f"The Credential ID {credential_id} "
+                    f"does not belong to this user."
+                )
             
-    #insert data base
-    for intended_use in intended_uses:
-        intendedUseIdentifier = intended_use.get("intendedUseIdentifier")
-        purposes = intended_use.get("purpose", [])
-        privacyPolicy_ids = intended_use.get("privacyPolicy_id", [])
-        credential_ids = intended_use.get("credential_ids", [])
+    try:
+        with db.transaction() as cursor:
+            for intended_use in intended_uses:
+                intendedUseIdentifier = intended_use.get("intendedUseIdentifier")
+                purposes = intended_use.get("purpose", [])
+                privacyPolicy_ids = intended_use.get("privacyPolicy_id", [])
+                credential_ids = intended_use.get("credential_ids", [])
 
-        createdAt = intended_use.get("createdAt")
-        revokedAt = intended_use.get("revokedAt")
+                createdAt = intended_use.get("createdAt")
+                revokedAt = intended_use.get("revokedAt")
 
-        error = validate_date_field(createdAt, "createdAt")
-        if error:
-            return error
+                intended_use_id = db.insert_intended_use(intendedUseIdentifier, createdAt, revokedAt, user_id, cursor=cursor)
+                result.append(intended_use_id)
 
-        error = validate_date_field(revokedAt, "revokedAt")
-        if error:
-            return error
+                for purpose in purposes:
+                    lang = purpose.get("lang")
+                    content = purpose.get("content")
 
-        intended_use_id = db.insert_intended_use(intendedUseIdentifier, createdAt, revokedAt, user_id)
-        result.append(intended_use_id)
+                    mls_id = db.insert_multilanguage_string(lang, content, user_id, cursor=cursor)
+                    db.insert_intended_use_purpose(intended_use_id, mls_id, cursor=cursor)
 
-        for purpose in purposes:
-            lang = purpose.get("lang")
-            content = purpose.get("content")
+                for privacyPolicy_id in privacyPolicy_ids:
+                    db.insert_intended_use_policy(intended_use_id, privacyPolicy_id, cursor=cursor)
 
-            mls_id = db.insert_multilanguage_string(lang, content, user_id)
-            db.insert_intended_use_purpose(intended_use_id, mls_id)
-        
-        for privacyPolicy_id in privacyPolicy_ids:
-            db.insert_intended_use_policy(intended_use_id, privacyPolicy_id)
+                for credential_id in credential_ids:
+                    db.insert_intended_use_credential(intended_use_id, credential_id, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
-        for credential_id in credential_ids:
-            db.insert_intended_use_credential(intended_use_id, credential_id)
-    
-    return create_response("Intended Use created successfully", "Credentials ids", result)
+    return create_response("Intended Use created successfully", "Intended Use ids", result)
 
 @rpr.route('/intended_use/list', methods=['POST'])
 def list_intended_use():
@@ -1550,30 +1877,50 @@ def create_provided_attestation():
     hash_pid = data.get("hash_pid")
     providesAttestations = data.get("providesAttestations", [])
 
+    if not isinstance(providesAttestations, list):
+        return error_invalid("Field 'providesAttestations' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     result = []
-    
+
     #validation
     for providesAttestation in providesAttestations:
+        if not isinstance(providesAttestation, dict):
+            return error_invalid("Each providesAttestation must be an object.")
+
         missing = validate_required_fields(providesAttestation, ["format", "meta"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
+
+        error = check_field_types(providesAttestation, {"format": str})
+        if error:
+            return error
+
         if not isinstance(providesAttestation["meta"], dict):
             return error_response(
                 "Field 'meta' must be an object."
             )
+        
+        if providesAttestation["format"] not in cfgserv.formats["SUPPORTED_FORMATS"]:
+            return error_invalid(
+                f"Invalid Provides Attestation format. Must be one of: "
+                f"{', '.join(cfgserv.formats['SUPPORTED_FORMATS'])}"
+            )
     
     #insert data base
-    for providesAttestation in providesAttestations:
-        format = providesAttestation.get("format")
-        meta = serialize_json(providesAttestation["meta"])
-        
-        provided_attestation_id = db.insert_provided_attestation(format, meta, user_id)
-        result.append(provided_attestation_id)
+    try:
+        with db.transaction() as cursor:
+            for providesAttestation in providesAttestations:
+                format = providesAttestation.get("format")
+                meta = serialize_json(providesAttestation["meta"])
+
+                provided_attestation_id = db.insert_provided_attestation(format, meta, user_id, cursor=cursor)
+                result.append(provided_attestation_id)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
     return create_response("Provided Attestation created successfully.", "Provided Attestation ids", result)
 
@@ -1613,7 +1960,10 @@ def create_supervisory_authority():
     
     hash_pid = data.get("hash_pid")
     supervisoryAuthority = data.get("supervisoryAuthority", [])
-    
+
+    if not isinstance(supervisoryAuthority, list):
+        return error_invalid("Field 'supervisoryAuthority' must be an array.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
@@ -1622,13 +1972,26 @@ def create_supervisory_authority():
 
     #validation
     for aux in supervisoryAuthority:
+        if not isinstance(aux, dict):
+            return error_invalid("Each supervisoryAuthority must be an object.")
+
         missing = validate_required_fields(aux, ["name", "country"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
-        emails = aux.get("email", [])
-        formuris = aux.get("formURI", [])
-        phones = aux.get("phone", [])
+
+        error = check_field_types(aux, {"name": str, "country": str})
+        if error:
+            return error
+
+        for field in ("email", "formURI", "phone"):
+            if not is_list_of(aux.get(field) or [], is_non_blank_str):
+                return error_invalid(f"Field '{field}' must be an array of non-empty strings.")
+
+            aux[field] = [value.strip() for value in aux.get(field) or []]
+
+        emails = aux.get("email") or []
+        formuris = aux.get("formURI") or []
+        phones = aux.get("phone") or []
         country = aux.get("country")
 
         if country not in cfgserv.eu_countries:
@@ -1638,28 +2001,29 @@ def create_supervisory_authority():
             return error_response("At least one of the following fields is required.", "email, formURI or phone")
         
     #insert data base
-    for aux in supervisoryAuthority:
+    try:
+        with db.transaction() as cursor:
+            for aux in supervisoryAuthority:
 
-        name = aux.get("name")
-        country = aux.get("country")
-        emails = aux.get("email", [])
-        formuris = aux.get("formURI", [])
-        phones = aux.get("phone", [])
-        
-        supervisory_authority_id = db.insert_supervisory_authority(name, country, user_id)
-        result.append(supervisory_authority_id)
+                name = aux.get("name")
+                country = aux.get("country")
+                emails = aux.get("email") or []
+                formuris = aux.get("formURI") or []
+                phones = aux.get("phone") or []
 
-        if emails:
-            for email in emails:
-                db.insert_supervisory_authority_email(supervisory_authority_id, email)
+                supervisory_authority_id = db.insert_supervisory_authority(name, country, user_id, cursor=cursor)
+                result.append(supervisory_authority_id)
 
-        if formuris:
-            for formUri in formuris:
-                db.insert_supervisory_authority_formuri(supervisory_authority_id, formUri)
+                for email in emails:
+                    db.insert_supervisory_authority_email(supervisory_authority_id, email, cursor=cursor)
 
-        if phones:
-            for phone in phones:
-                db.insert_supervisory_authority_phone(supervisory_authority_id, phone)
+                for formUri in formuris:
+                    db.insert_supervisory_authority_formuri(supervisory_authority_id, formUri, cursor=cursor)
+
+                for phone in phones:
+                    db.insert_supervisory_authority_phone(supervisory_authority_id, phone, cursor=cursor)
+    except db.DatabaseError as e:
+        return db_write_error(e)
 
     return create_response("Supervisory Authority created successfully", "Supervisory Authority ids", result)
 
@@ -1685,6 +2049,126 @@ def list_supervisory_authority():
     return list_response("Supervisory Authority retrieved successfully.", result, "supervisory_authority")
 
 ## -wrp
+def validate_wrp_services(wrp_services, user_id, claimed_intended_uses):
+    """Validates a list of WalletRelyingPartyService objects (types, ownership, uniqueness).
+
+    Returns (error, normalized_services). error is a Flask response tuple or None.
+    claimed_intended_uses is a set shared by the whole request, so the same Intended Use
+    cannot be given to two services in one request.
+    """
+    if not isinstance(wrp_services, list) or not wrp_services or not all(isinstance(svc, dict) for svc in wrp_services):
+        return error_response("Field 'WalletRelyingPartyService' must be a non-empty array of objects."), None
+
+    entitlement_values = cfgserv.relying_party["Entitlement"]
+    normalized = []
+
+    for svc in wrp_services:
+        missing = validate_required_fields(svc, ["serviceTradeName", "serviceIdentifier", "supportURIs", "srvDescription", "email", "phone"])
+        if missing:
+            return error_response("Missing required fields.", missing), None
+
+        for field in ("serviceTradeName", "serviceIdentifier", "email", "phone"):
+            if not is_non_blank_str(svc[field]) or len(svc[field].strip()) > 255:
+                return error_invalid(f"{field} must be a non-empty string with at most 255 characters."), None
+
+        if "isIntermediary" in svc and not isinstance(svc["isIntermediary"], bool):
+            return error_invalid("isIntermediary must be a boolean."), None
+
+        for field in ("intendedUse_ids", "providesAttestations_ids", "usesIntermediary", "servedWRPServices"):
+            ids = svc.get(field) or []
+            if not is_list_of(ids, is_id):
+                return error_invalid(f"{field} must be an array of positive integers."), None
+
+            # Repeated ids in the request are a 400; 409 is reserved for conflicts with existing rows
+            repeated = sorted({value for value in ids if ids.count(value) > 1})
+            if repeated:
+                return error_invalid(f"{field} contains repeated ids: {', '.join(map(str, repeated))}."), None
+
+        for field in ("entitlements", "subEntitlements"):
+            if not is_list_of(svc.get(field) or [], is_str):
+                return error_invalid(f"{field} must be an array of strings."), None
+
+        if not is_list_of(svc["supportURIs"], is_non_blank_str):
+            return error_invalid("supportURIs must be an array of non-empty strings."), None
+
+        if not is_list_of(svc["srvDescription"], lambda value: isinstance(value, dict)):
+            return error_invalid("srvDescription must be an array of objects."), None
+
+        srv_descriptions = []
+        for srvDescription in svc["srvDescription"]:
+            missing = validate_required_fields(srvDescription, ["lang", "content"])
+            if missing:
+                return error_response("Missing required fields.", missing), None
+
+            if not isinstance(srvDescription["lang"], str) or not isinstance(srvDescription["content"], str):
+                return error_invalid("srvDescription lang and content must be strings."), None
+
+            if srvDescription["lang"] not in cfgserv.eu_languages:
+                return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}"), None
+
+            srv_descriptions.append({"lang": srvDescription["lang"], "content": srvDescription["content"].strip()})
+
+        intendedUse_ids = svc.get("intendedUse_ids") or []
+        entitlements = svc.get("entitlements") or []
+        subEntitlements = svc.get("subEntitlements") or []
+        providesAttestations_ids = svc.get("providesAttestations_ids") or []
+        usesIntermediarys = svc.get("usesIntermediary") or []
+        servedWRPServices = svc.get("servedWRPServices") or []
+
+        for entitlement in entitlements:
+            if entitlement not in entitlement_values:
+                return error_invalid(f"Invalid entitlement. Must be one of: {', '.join(entitlement_values)}"), None
+
+        for sub_entitlement in subEntitlements:
+            if sub_entitlement not in entitlement_values:
+                return error_invalid(f"Invalid sub entitlement. Must be one of: {', '.join(entitlement_values)}"), None
+
+        for servedWRPService in servedWRPServices:
+            if user_id != db.check_wrp_service(servedWRPService):
+                return error_invalid(f"The served WRP Service ID {servedWRPService} does not belong to this user"), None
+
+        for usesIntermediary in usesIntermediarys:
+            if user_id != db.check_wrp_service(usesIntermediary):
+                return error_invalid(f"The usesIntermediary ID {usesIntermediary} does not belong to this user"), None
+
+            if db.check_wrp_intermediary(usesIntermediary) != 1:
+                return error_invalid(f"The usesIntermediary ID {usesIntermediary} is not a Intermediary Wallet Relying Party Service"), None
+
+        for providesAttestations_id in providesAttestations_ids:
+            if user_id != db.check_provided_attestation(providesAttestations_id):
+                return error_invalid(f"The providesAttestations ID {providesAttestations_id} does not belong to this user"), None
+
+        for intendedUse_id in intendedUse_ids:
+            if user_id != db.check_intendedUse(intendedUse_id):
+                return error_invalid(f"The intendedUse ID {intendedUse_id} does not belong to this user"), None
+
+            if intendedUse_id in claimed_intended_uses:
+                return error_invalid(f"intendedUse_ids contains repeated ids across services in this request: {intendedUse_id}."), None
+
+            if db.check_wrp_intendedUse(intendedUse_id) != []:
+                return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party service"), None
+
+            claimed_intended_uses.add(intendedUse_id)
+
+        normalized.append({
+            "serviceTradeName": svc["serviceTradeName"].strip(),
+            "serviceIdentifier": svc["serviceIdentifier"].strip(),
+            "email": svc["email"].strip(),
+            "phone": svc["phone"].strip(),
+            # A service that uses intermediaries cannot itself be an intermediary
+            "isIntermediary": False if usesIntermediarys else svc.get("isIntermediary", False),
+            "entitlements": entitlements,
+            "subEntitlements": subEntitlements,
+            "usesIntermediary": usesIntermediarys,
+            "supportURIs": [value.strip() for value in svc["supportURIs"]],
+            "srvDescription": srv_descriptions,
+            "providesAttestations_ids": providesAttestations_ids,
+            "intendedUse_ids": intendedUse_ids,
+            "servedWRPServices": servedWRPServices,
+        })
+
+    return None, normalized
+
 @rpr.route('/wallet_rp/create', methods=['POST'])
 def create_wrp():
 
@@ -1701,160 +2185,69 @@ def create_wrp():
     hash_pid = data.get("hash_pid")
     wrps = data.get("WalletRelyingParty", [])
 
+    if not isinstance(wrps, list) or not all(isinstance(wrp, dict) for wrp in wrps):
+        return error_response("Field 'WalletRelyingParty' must be a non-empty array of objects.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
 
-    result = []
-
     #validation
+    to_insert = []
+    claimed_intended_uses = set()
+
     for wrp in wrps:
         missing = validate_required_fields(wrp, ["provider_id", "isPSB", "supervisoryAuthority", "registryURI", "WalletRelyingPartyService"])
         if missing:
             return error_response("Missing required fields.", missing)
-        
+
+        if not isinstance(wrp["isPSB"], bool):
+            return error_invalid("isPSB must be a boolean.")
+
+        for field in ("provider_id", "supervisoryAuthority"):
+            if not is_id(wrp[field]):
+                return error_invalid(f"{field} must be a positive integer.")
+
+        if not isinstance(wrp["registryURI"], str):
+            return error_invalid("registryURI must be a string.")
+
+        tradeName = wrp.get("tradeName")
+        if tradeName is not None and (not isinstance(tradeName, str) or len(tradeName) > 255):
+            return error_invalid("tradeName must be a string with at most 255 characters.")
+
         supervisoryAuthority = wrp.get("supervisoryAuthority")
         provider_id = wrp.get("provider_id")
-        registryURI = wrp.get("registryURI")
-        isPSB = wrp.get("isPSB")
-        tradeName = wrp.get("tradeName")
-        wrp_services = wrp.get("WalletRelyingPartyService", [])
-        
+
         if user_id != db.check_supervisory_authority(supervisoryAuthority):
             return error_invalid(f"The supervisoryAuthority ID {supervisoryAuthority} does not belong to this user")
 
         if user_id != db.check_provider(provider_id):
                 return error_invalid(f"The Provider ID {provider_id} does not belong to this user")
-        
-        for wrp_service in wrp_services:
-                missing = validate_required_fields(wrp_service, ["serviceTradeName", "serviceIdentifier", "supportURIs", "srvDescription", "email", "phone"])
-                
-                if missing:
-                    return error_response("Missing required fields.", missing)
-                
-                supportURI = wrp_service.get("supportURI", [])
-                srvDescriptions = wrp_service.get("srvDescription", [])
-                intendedUse_ids = wrp_service.get("intendedUse_ids", [])
-                entitlements = wrp_service.get("entitlements", [])
-                providesAttestations_ids = wrp_service.get("providesAttestations_ids", [])
-                usesIntermediarys = wrp_service.get("usesIntermediarys", [])
-                servedWRPServices = wrp_service.get("servedWRPServices", [])
-                subEntitlements = wrp_service.get("subEntitlements", [])
-                
-                if servedWRPServices:
-                    for servedWRPService in servedWRPServices:
-                        if user_id != db.check_wrp_service(servedWRPService):
-                            return error_invalid(f"The served WRP Service ID {servedWRPService} does not belong to this user")
-                
-                if usesIntermediarys:
-                    for usesIntermediary in usesIntermediarys:
-                        if user_id != db.check_wrp_service(usesIntermediary):
-                            return error_invalid(f"The usesIntermediary ID {usesIntermediary} does not belong to this user")
-                        
-                        if db.check_wrp_intermediary(usesIntermediary) != []:
-                            return error_invalid(f"The usesIntermediary ID {usesIntermediary} already is a Intermediary")
-        
-                if providesAttestations_ids:
-                    for providesAttestations_id in providesAttestations_ids:
-                        if user_id != db.check_provided_attestation(providesAttestations_id):
-                            return error_invalid(f"The providesAttestations ID {providesAttestations_id} does not belong to this user")
-                
-                if intendedUse_ids:
-                    for intendedUse_id in intendedUse_ids:
-                        if user_id != db.check_intendedUse(intendedUse_id):
-                            return error_invalid(f"The intendedUse ID {intendedUse_id} does not belong to this user")
-        
-                    if db.check_wrp_intendedUse(intendedUse_id) != []:
-                        return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party")
-                
-                    if entitlements:
-                        for entitlement in entitlements:
-                            if entitlement not in cfgserv.relying_party["Entitlement"]:
-                                return error_invalid(f"Invalid entitlement. Must be one of: {', '.join(cfgserv.relying_party['Entitlement'])}")
 
-                    if subEntitlements:
-                        for sub_entitlement in subEntitlements:
-                            if sub_entitlement not in cfgserv.relying_party["Entitlement"]:
-                                return error_invalid(f"Invalid sub entitlement. Must be one of: {', '.join(cfgserv.relying_party['Entitlement'])}")
+        error, wrp_services = validate_wrp_services(wrp["WalletRelyingPartyService"], user_id, claimed_intended_uses)
+        if error:
+            return error
 
-                for srvDescription in srvDescriptions:
-                    missing = validate_required_fields(srvDescription, ["lang"])
-                    if missing:
-                        return error_response("Missing required fields.", missing)
-                    
-                    lang = srvDescription.get("lang")
-                    if lang not in cfgserv.eu_languages:
-                        return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
-    
+        to_insert.append({
+            "provider_id": provider_id,
+            "tradeName": tradeName,
+            "isPSB": wrp["isPSB"],
+            "registryURI": wrp["registryURI"],
+            "supervisoryAuthority": supervisoryAuthority,
+            "WalletRelyingPartyService": wrp_services,
+        })
+
     #insert data base
-    for wrp in wrps:
-        
-        supervisoryAuthority = wrp.get("supervisoryAuthority")
-        provider_id = wrp.get("provider_id")
-        registryURI = wrp.get("registryURI")
-        isPSB = wrp.get("isPSB")
-        tradeName = wrp.get("tradeName")
-        wrp_services = wrp.get("WalletRelyingPartyService", [])
+    try:
+        created = db.insert_wrps_with_services_atomic(to_insert, user_id)
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error creating Wallet Relying Party. No data was saved.")
 
-        wrp_id = db.insert_wrp(provider_id, tradeName, isPSB, registryURI, supervisoryAuthority, user_id)
+    result = []
+    for wrp_id, wrp_service_ids in created:
         result.append("Wallet Relying Party: " + str(wrp_id))
-
-        for wrp_service in wrp_services:
-            
-            serviceTradeName = wrp_service.get("serviceTradeName")
-            serviceIdentifier = wrp_service.get("serviceIdentifier")
-            supportURIs = wrp_service.get("supportURIs", [])
-            srvDescriptions = wrp_service.get("srvDescription", [])
-            intendedUse_ids = wrp_service.get("intendedUse_ids", [])
-            entitlements = wrp_service.get("entitlements", [])
-            providesAttestations_ids = wrp_service.get("providesAttestations_ids", [])
-            usesIntermediarys = wrp_service.get("usesIntermediarys", [])
-            isIntermediary = True
-            email = wrp_service.get("email")
-            phone = wrp_service.get("phone")
-            servedWRPServices = wrp_service.get("servedWRPServices", [])
-            subEntitlements = wrp_service.get("subEntitlements", [])
-            
-            if usesIntermediarys:
-                isIntermediary = False
-
-            wrp_service_id = db.insert_wrp_service(wrp_id, serviceTradeName, serviceIdentifier, email, phone, isIntermediary, user_id)
+        for wrp_service_id in wrp_service_ids:
             result.append("Wallet Relying Party service: " + str(wrp_service_id))
-
-            if entitlements:
-                for entitlement in entitlements:
-                    db.insert_wrp_entitlement(wrp_service_id, entitlement)
-
-            if usesIntermediarys:
-                for usesIntermediary in usesIntermediarys:
-                    db.insert_wrp_intermediary(wrp_service_id, usesIntermediary)
-            
-            for supportURI in supportURIs:
-                db.insert_wrp_support_uri(wrp_service_id, supportURI)
-
-            for srvDescription in srvDescriptions:
-                lang = srvDescription.get("lang")
-                content = srvDescription.get("content")
-
-                mls_id = db.insert_multilanguage_string(lang, content, user_id)
-
-                db.insert_wrp_srv_description(wrp_service_id, mls_id)
-
-            if providesAttestations_ids:
-                for providesAttestations_id in providesAttestations_ids:
-                    db.insert_wrp_provided_attestation(wrp_service_id, providesAttestations_id)
-
-            if intendedUse_ids:
-                for intendedUse_id in intendedUse_ids:
-                    db.insert_wrp_intended_use(wrp_service_id, intendedUse_id)
-
-            if servedWRPServices:
-                for servedWRPService in servedWRPServices:
-                    db.insert_wrp_servedwrpservices(wrp_service_id, servedWRPService)
-
-            if subEntitlements:
-                for sub_entitlement in subEntitlements:
-                    db.insert_wrp_sub_entitlement(wrp_service_id, sub_entitlement)
 
     return create_response("Wallet Relying Party and Wallet Relying Party service created successfully", "wrp ids", result)
 
@@ -1882,26 +2275,32 @@ def list_wrp():
 @rpr.route('/wallet_rp/update_wrp_service', methods=['POST'])
 def update_wrp_service():
     data = request.get_json(silent=True)
-   
+
     if not data:
         return error_response("Invalid or missing JSON body")
 
     missing = validate_required_fields(data, ["hash_pid", "WalletRelyingParty_id", "WalletRelyingPartyService_ids"])
     if missing:
         return error_response("Missing required fields.", missing)
-    
+
     hash_pid = data.get("hash_pid")
     WalletRelyingParty_id = data.get("WalletRelyingParty_id")
-    WalletRelyingPartyService_ids = data.get("WalletRelyingPartyService_ids", [])
-    
+    WalletRelyingPartyService_ids = data.get("WalletRelyingPartyService_ids") or []
+
+    if not is_id(WalletRelyingParty_id):
+        return error_invalid("WalletRelyingParty_id must be a positive integer.")
+
+    if not is_list_of(WalletRelyingPartyService_ids, is_id):
+        return error_invalid("WalletRelyingPartyService_ids must be an array of positive integers.")
+
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-    
+
     #verification
     if user_id != db.check_wrp(WalletRelyingParty_id):
         return error_invalid(f"Wallet Relying Party id {WalletRelyingParty_id} doesn't belong to this user")
-    
+
     for WalletRelyingPartyService_id in WalletRelyingPartyService_ids:
         if user_id != db.check_wrp_service(WalletRelyingPartyService_id):
             return error_invalid(f"Wallet Relying Party Service id {WalletRelyingPartyService_id} doesn't belong to this user")
@@ -1910,10 +2309,12 @@ def update_wrp_service():
             return error_invalid(f"Wallet Relying Party Service id {WalletRelyingPartyService_id} already belongs to other wallet relying party.")
 
     #insert data base
-    for WalletRelyingPartyService_id in WalletRelyingPartyService_ids:
-        db.update_wrp_wrpService(WalletRelyingParty_id, WalletRelyingPartyService_id)
+    try:
+        updated = db.update_wrp_wrpServices_atomic(WalletRelyingParty_id, WalletRelyingPartyService_ids)
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error associating Wallet Relying Party Services. No data was saved.")
 
-    return update_response("Wallet Relying Party Wallet Relying Party Service associations updated successfully", len(WalletRelyingPartyService_ids))
+    return update_response("Wallet Relying Party Wallet Relying Party Service associations updated successfully", updated)
 
 @rpr.route('/wallet_rp/remove_wrp_service', methods=['POST'])
 def remove_wrp_service():
@@ -2017,143 +2418,35 @@ def create_wrp_service():
 
     if not data:
         return error_response("Invalid or missing JSON body")
-    
+
     missing = validate_required_fields(data, ["hash_pid", "WalletRelyingParty", "WalletRelyingPartyService"])
-    
+
     if missing:
         return error_response("Missing required fields.", missing)
 
     hash_pid = data.get("hash_pid")
     wrp = data.get("WalletRelyingParty")
-    wrp_services = data.get("WalletRelyingPartyService", [])
+
+    if not is_id(wrp):
+        return error_invalid("WalletRelyingParty must be a positive integer.")
 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
 
-    result = []
-
     #validation
     if user_id != db.check_wrp(wrp):
         return error_invalid(f"The Wallet RelyingParty ID {wrp} does not belong to this user")
-                    
-    for wrp_service in wrp_services:
-        missing = validate_required_fields(wrp_service, ["serviceTradeName", "serviceIdentifier", "supportURIs", "srvDescription", "email", "phone"])
-        
-        if missing:
-            return error_response("Missing required fields.", missing)
-        
-        supportURI = wrp_service.get("supportURIs", [])
-        srvDescriptions = wrp_service.get("srvDescription", [])
-        intendedUse_ids = wrp_service.get("intendedUse_ids", [])
-        entitlements = wrp_service.get("entitlements", [])
-        providesAttestations_ids = wrp_service.get("providesAttestations_ids", [])
-        usesIntermediarys = wrp_service.get("usesIntermediary", [])
-        servedWRPServices = wrp_service.get("servedWRPServices", [])
-        subEntitlements = wrp_service.get("subEntitlements", [])
 
-        if servedWRPServices:
-            for servedWRPService in servedWRPServices:
-                if user_id != db.check_wrp_service(servedWRPService):
-                    return error_invalid(f"The served WRP Service ID {servedWRPService} does not belong to this user")
+    error, wrp_services = validate_wrp_services(data.get("WalletRelyingPartyService"), user_id, set())
+    if error:
+        return error
 
-        if usesIntermediarys:
-            for usesIntermediary in usesIntermediarys:
-                if user_id != db.check_wrp_service(usesIntermediary):
-                    return error_invalid(f"The usesIntermediary ID {usesIntermediary} does not belong to this user")
-                
-                if db.check_wrp_intermediary(usesIntermediary) != []:
-                    return error_invalid(f"The usesIntermediary ID {usesIntermediary} already is a Intermediary")
-
-        if providesAttestations_ids:
-            for providesAttestations_id in providesAttestations_ids:
-                if user_id != db.check_provided_attestation(providesAttestations_id):
-                    return error_invalid(f"The providesAttestations ID {providesAttestations_id} does not belong to this user")
-        
-        if intendedUse_ids:
-            for intendedUse_id in intendedUse_ids:
-                if user_id != db.check_intendedUse(intendedUse_id):
-                    return error_invalid(f"The intendedUse ID {intendedUse_id} does not belong to this user")
-
-                if db.check_wrp_intendedUse(intendedUse_id) != []:
-                    return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party service")
-
-        if entitlements:
-            for entitlement in entitlements:
-                if entitlement not in cfgserv.relying_party["Entitlement"]:
-                    return error_invalid(f"Invalid entitlement. Must be one of: {', '.join(cfgserv.relying_party['Entitlement'])}")
-
-        if subEntitlements:
-            for sub_entitlement in subEntitlements:
-                if sub_entitlement not in cfgserv.relying_party["Entitlement"]:
-                    return error_invalid(f"Invalid sub entitlement. Must be one of: {', '.join(cfgserv.relying_party['Entitlement'])}")
-
-        for srvDescription in srvDescriptions:
-            missing = validate_required_fields(srvDescription, ["lang"])
-            if missing:
-                return error_response("Missing required fields.", missing)
-            
-            lang = srvDescription.get("lang")
-            if lang not in cfgserv.eu_languages:
-                return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
-        
     #insert data base
-    for wrp_service in wrp_services:
-        
-        serviceTradeName = wrp_service.get("serviceTradeName")
-        serviceIdentifier = wrp_service.get("serviceIdentifier")
-        supportURIs = wrp_service.get("supportURIs", [])
-        srvDescriptions = wrp_service.get("srvDescription", [])
-        intendedUse_ids = wrp_service.get("intendedUse_ids", [])
-        entitlements = wrp_service.get("entitlements", [])
-        providesAttestations_ids = wrp_service.get("providesAttestations_ids", [])
-        usesIntermediarys = wrp_service.get("usesIntermediary", [])
-        isIntermediary = True
-        email = wrp_service.get("email")
-        phone = wrp_service.get("phone")
-        servedWRPServices = wrp_service.get("servedWRPServices", [])
-        subEntitlements = wrp_service.get("subEntitlements", [])
-        
-        if usesIntermediarys:
-            isIntermediary = False
-
-        wrp_service_id = db.insert_wrp_service(wrp, serviceTradeName, serviceIdentifier, email, phone, isIntermediary, user_id)
-        result.append(wrp_service_id)
-
-        if entitlements:
-            for entitlement in entitlements:
-                db.insert_wrp_entitlement(wrp_service_id, entitlement)
-
-        if usesIntermediarys:
-            for usesIntermediary in usesIntermediarys:
-                db.insert_wrp_intermediary(wrp_service_id, usesIntermediary)
-        
-        for supportURI in supportURIs:
-            db.insert_wrp_support_uri(wrp_service_id, supportURI)
-
-        for srvDescription in srvDescriptions:
-            lang = srvDescription.get("lang")
-            content = srvDescription.get("content")
-
-            mls_id = db.insert_multilanguage_string(lang, content, user_id)
-
-            db.insert_wrp_srv_description(wrp_service_id, mls_id)
-
-        if providesAttestations_ids:
-            for providesAttestations_id in providesAttestations_ids:
-                db.insert_wrp_provided_attestation(wrp_service_id, providesAttestations_id)
-
-        if intendedUse_ids:
-            for intendedUse_id in intendedUse_ids:
-                db.insert_wrp_intended_use(wrp_service_id, intendedUse_id)
-
-        if servedWRPServices:
-            for servedWRPService in servedWRPServices:
-                db.insert_wrp_servedwrpservices(wrp_service_id, servedWRPService)
-
-        if subEntitlements:
-            for sub_entitlement in subEntitlements:
-                db.insert_wrp_sub_entitlement(wrp_service_id, sub_entitlement)
+    try:
+        result = db.insert_wrp_services_atomic(wrp, wrp_services, user_id)
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error creating Wallet Relying Party Service. No data was saved.")
 
     return create_response("Wallet Relying Party Service created successfully", "Wallet Relying Party Service new IDs", result)
 
@@ -2274,8 +2567,11 @@ def update_wrp_uses_intermediary():
         if user_id != db.check_wrp_service(uses_intermediary_id):
             return error_invalid(f"Wallet Relying Party Service id {uses_intermediary_id} doesn't belong to this user")
         
-        if db.check_wrp_intermediary(uses_intermediary_id) != []:
-            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} already is a Intermediary")
+        if db.check_wrp_intermediary(uses_intermediary_id) != 1:
+            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} is not a Intermediary Wallet Relying Party Service")
+
+        if db.check_wrp_intermediary_with_wpr(wrp_service_id, uses_intermediary_id) != []:
+            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} is already an intermediary of this Wallet Relying Party Service")
         
     #insert data base
     for uses_intermediary_id in uses_intermediary_ids:
@@ -2404,26 +2700,28 @@ def remove_wrp_uses_intermediary():
         "Wallet Relying Party Service uses Intermediary associations removed successfully",
         deleted_count
     )
-
 @rpr.route('/list_claim', methods=['POST'])
 def list_claim():
     data = request.get_json(silent=True)
-        
+ 
     if not data:
         return error_response("Invalid or missing JSON body")
-
+ 
     missing = validate_required_fields(data, ["hash_pid"])
     if missing:
         return error_response("Missing required fields.", missing)
-    
+ 
     hash_pid = data.get("hash_pid")
-    
+ 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
-
-    result = db.get_claim(user_id)
-
+ 
+    try:
+        result = db.get_claim(user_id)
+    except db.DatabaseError:
+        return error_server("Error retrieving claims.")
+ 
     return list_response("Claims retrieved successfully.", result, "claim")
 
 @rpr.route('/list_full_info', methods=['POST'])
@@ -2446,6 +2744,7 @@ def list_full_info():
     legal_entities = db.get_legal_entity(user_id)
     providers = db.get_provider(user_id)
     wrps = db.get_wrp(user_id)
+    wrp_services = db.get_wrp_service(user_id)
     intended_uses = db.get_intended_use(user_id)
 
     result = []
@@ -2459,6 +2758,28 @@ def list_full_info():
         wrp_by_provider.setdefault(w["provider_id"], []).append(w)
 
     iu_by_id = {iu["intended_use_id"]: iu for iu in intended_uses}
+
+    # TS5/TS6: service data (Intended Uses included) belongs to the Wallet Relying Party Services
+    service_details = {
+        s["wrp_service_id"]: {
+            "entitlements": s["entitlements"],
+            "subEntitlements": s["subEntitlements"],
+            "srvDescription": s["srvDescription"],
+            "supportURI": s["supportURI"],
+            "usesIntermediary": s["usesIntermediary"],
+            "servedWRPServices": s["servedWRPServices"],
+            "providedAttestation": s["provides_attestations"],
+            "intendedUses": s["intendedUses"],
+        }
+        for s in wrp_services
+    }
+
+    iu_refs_by_wrp = {}
+    for s in wrp_services:
+        refs = iu_refs_by_wrp.setdefault(s["wrp_id"], [])
+        for iu_ref in s.get("intendedUses", []):
+            if iu_ref not in refs:
+                refs.append(iu_ref)
 
     for le in legal_entities:
 
@@ -2477,10 +2798,14 @@ def list_full_info():
             for w in wrp_by_provider.get(p_id, []):
 
                 w_obj = w.copy()
+                w_obj["wallet_relying_party_service"] = [
+                    {**service, **service_details.get(service["wrp_service_id"], {})}
+                    for service in w.get("wallet_relying_party_service", [])
+                ]
 
                 full_iu = []
 
-                for iu_ref in w.get("intendedUses", []):
+                for iu_ref in iu_refs_by_wrp.get(w["wrp_id"], []):
                     iu_id = iu_ref["id"]
 
                     if iu_id in iu_by_id:
@@ -2701,7 +3026,7 @@ def wrp_access_certificate():
     #servicesDescription=RP[0]["srvDescription"]#como as TSLs, ex: lang en, description=test  
     #entitlement=RP[0]["entitlement"]
     # verificar legal entity se é pertence ao sector público, se sim True, se não False
-    isPSB= False
+    #isPSB= False
 #### ------
     # password=request.form.get("Password")
 
@@ -2722,12 +3047,19 @@ def wrp_access_certificate():
     ManagementCA = ejbca.managementCA
 
     trustCA= getTrustManagerOfCACertificate(ManagementCA)
-
+    
     response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
 
     response = response.json()
-    
-    certificate_bytes=base64.b64decode(response["certificate"])
+
+    certificate = response.get("certificate")
+
+    if not certificate:
+        extra = {"response": response}
+        logger.error("Error EJBCA response.", extra=extra)
+        return error_invalid("Error EJBCA response.")
+
+    certificate_bytes = base64.b64decode(certificate)
 
     certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
 
@@ -2857,6 +3189,7 @@ def intended_use_registration_certificate():
     name = wrp_service[0]["wrp_service_trade_name"]
     supportURI = wrp_service[0]["supportURI"][0]
     purpose = intended_use[0]["purpose"]
+    info_uri = None
     if legal_entity[0].get("infoURI") and len(legal_entity[0]["infoURI"]) > 0:
         info_uri = legal_entity[0]["infoURI"][0]
     country = legal_entity[0]["country"]
@@ -2867,7 +3200,7 @@ def intended_use_registration_certificate():
     id = legal_entity[0]["identifier"][0]["identifier"]
 
     #id = legal_entity_data[0]["identifier"]
-    privacy_policy = intended_use[0]["privacyPolicy"][0]["type"]
+    privacy_policy = intended_use[0]["privacyPolicy"][0]["policyURI"]
 
 # # definir de acordo com os dados do certificado
 # # policy_id=certificate_policy_id
@@ -2882,7 +3215,8 @@ def intended_use_registration_certificate():
     # if wrp[0]["providesAttestations"]:
     #     providesAttestations = wrp[0]["providesAttestations"]
     public_body = wrp[0]["isPSB"]
-    srv_description = wrp_service[0]["srvDescription"]
+    srv_descriptions = wrp_service[0]["srvDescription"]
+    
 
 # #A URI to a status list presenting information about validity of the WRPRC. 
 # #status=
@@ -2918,7 +3252,7 @@ def intended_use_registration_certificate():
 
     headers={
         "accept": "application/json",
-        "X-API-Key": "test" ,
+        "X-API-Key": cfgserv.statuslist_apikey,
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
@@ -2927,7 +3261,7 @@ def intended_use_registration_certificate():
         "doctype":"wrprc",
         "expiry_date":(now + timedelta(days=6*30)).strftime("%Y-%m-%d")
     }
-
+    
     response = requests.post(cfgserv.url_statuslist, headers=headers, data=data)
     
     status=response.json()
@@ -2957,8 +3291,8 @@ def intended_use_registration_certificate():
                         "iat": iat, 
                         "credentials": credentials,
                         "entitlements": entitlement,
-                        "public_body": False,
-                        "srv_description": srv_description,
+                        "public_body": public_body,
+                        "srv_description": srv_descriptions,
                         "support_uri":supportURI,
                         "status": { 
                             "status_list": { 
@@ -3041,12 +3375,12 @@ def intended_use_registration_certificate():
                 "sname": rp_intermediary[0]["wrp_service_trade_name"]
             }
         })
-    
+        
     with open(cfgserv.wrprc_certificate, "rb") as f:
         cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
     base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-    
+
     #Jades with b-b profile
 
     # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
@@ -3065,24 +3399,42 @@ def intended_use_registration_certificate():
 
     base64_payload=base64.b64encode(file_bytes).decode("utf-8")
 
+    cbor_data= cbor2.dumps(json_payload)
+
+    base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
+
     #print(document)
-    payload=json.dumps({
-
-            "documents":[{
-
+    payload = {
+        "documents": [
+            {
+                "document": base64_cbor,
+                "signature_format": "CB",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            },
+            {
                 "document": base64_payload,
                 "signature_format": "J",
                 "conformance_level":"Ades-B-B",
                 "signed_envelope_property": "ENVELOPING",
                 "container": "No"
-
-            } ],
-        "endEntityCertificate": base64_cert,
-        "certificateChain": [
+            }
         ],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
+        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+        "returnValidationInfo": False,
+        "endEntityCertificate": base64_cert,
+        "certificateChain": []
+    }
+    
+    if cfgserv.wrprc_intermediate:
+        with open(cfgserv.wrprc_intermediate, "rb") as f:
+            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
 
-    })
+        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+        payload["certificateChain"].append(base64_intermediate_cert)
+
+    payload = json.dumps(payload).encode()
 
     headers={
         'Content-Type': 'application/json'
@@ -3092,14 +3444,17 @@ def intended_use_registration_certificate():
 
     #print(calculate_hash.json())
     #print(calculate_hash.json()["hashes"])
-
     hashes1 = calculate_hash.json()["hashes"]
 
     #print(hashes1[0])
 
-    base64_string = urllib.parse.unquote(hashes1[0])
+    base64_string_cbor = urllib.parse.unquote(hashes1[0])
 
-    data_to_be_signed = base64.b64decode(base64_string)
+    data_to_be_signed_cbor = base64.b64decode(base64_string_cbor)
+
+    base64_string_JWT = urllib.parse.unquote(hashes1[1])
+    
+    data_to_be_signed_jwt = base64.b64decode(base64_string_JWT)
 
     #print(data_to_be_signed)
 
@@ -3116,19 +3471,28 @@ def intended_use_registration_certificate():
         backend=default_backend()
     )
 
-    # key=ECC.import_key(private_key)
-
-    # signature = DSS.new(key).sign(data_to_be_signed)
-    signature = private_key.sign(
-        data_to_be_signed,
+    signature_cbor = private_key.sign(
+        data_to_be_signed_cbor,
         ec.ECDSA(utils.Prehashed(hashes.SHA256()))
     )
+    base64_signature_cbor= base64.b64encode(signature_cbor).decode()
 
-    base64_signature= base64.b64encode(signature).decode()
+    signature_jwt = private_key.sign(
+        data_to_be_signed_jwt,
+        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
+    )
+    base64_signature_jwt= base64.b64encode(signature_jwt).decode()
     #print(base64_signature)
 
-    payload = json.dumps({
+    payload = {
         "documents": [
+            {
+                "document": base64_cbor,
+                "signature_format": "CB",
+                "conformance_level":"Ades-B-B",
+                "signed_envelope_property": "ENVELOPING",
+                "container": "No"
+            },
             {
                 "document": base64_payload,
                 "signature_format": "J",
@@ -3140,17 +3504,25 @@ def intended_use_registration_certificate():
         "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
         "returnValidationInfo": False,
         "endEntityCertificate": base64_cert,
-        "certificateChain": [
-        ],
-        "signatures":[base64_signature],
+        "certificateChain": [],
+        "signatures":[base64_signature_cbor, base64_signature_jwt],
         "date": signature_date
-    }).encode()
+    }
+    
+    if cfgserv.wrprc_intermediate:
+        with open(cfgserv.wrprc_intermediate, "rb") as f:
+            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+
+        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+        payload["certificateChain"].append(base64_intermediate_cert)
+
+    payload = json.dumps(payload).encode()
 
     obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
     
-    document_with_signature=obtain_signed_document.json()["documentWithSignature"][0]
+    document_with_signature=obtain_signed_document.json()["documentWithSignature"]
 
-    data=json.loads(base64.b64decode(document_with_signature).decode("utf-8"))
+    data=json.loads(base64.b64decode(document_with_signature[1]).decode("utf-8"))
 
     jwt_payload=data["payload"]
     jwt_header=data["signatures"][0]["protected"]
@@ -3158,23 +3530,8 @@ def intended_use_registration_certificate():
 
     jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
 
-    #cbor
-
-    cbor_data= cbor2.dumps(json_payload)
-
-    msg = Sign1Message(phdr={Algorithm: Es256},uhdr={KID: b"key1"},payload=cbor_data)
-
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        pem_bytes = f.read()
-
-    cose_key = CoseKey.from_pem_private_key(pem_bytes.decode())
-    msg.key = cose_key
-    cose_bytes = msg.encode()
-
-    #file_data = base64.b64decode(document_with_signature)
-
     file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
-    cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
+    cose_base64 = document_with_signature[0]
 
     db.insert_registration_certificate(
         jwt_certificate=file_base64,
@@ -3205,3 +3562,616 @@ def intended_use_registration_certificate():
 
     cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
     return cose_base64
+
+
+@rpr.route("/wallet_rp/certificate_error", methods=["POST"])
+def wrp_access_certificate_error():
+    data = request.get_json(silent=True)
+
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(
+        data,
+        ["hash_pid", "wrp_service_id", "password", "error_type"]
+    )
+
+    if missing:
+        return error_response("Missing required fields.", missing)
+
+    hash_pid = data.get("hash_pid")
+    wrp_service_id = data.get("wrp_service_id")
+    password = data.get("password")
+    error_type = data.get("error_type")
+
+    supported_errors = ["invalid_signature", "expired"]
+
+    if error_type not in supported_errors:
+        return error_invalid(
+            "Invalid error_type.",
+            {
+                "allowed_values": supported_errors
+            }
+        )
+
+    user_id = db.check_user(hash_pid)
+    if user_id is None:
+        return error_invalid("Invalid hash_pid")
+    
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
+
+    wrp_service = db.get_wrp_service_id(wrp_service_id)
+
+    if not wrp_service:
+        return error_invalid(
+            f"Wallet Relying Party Service {wrp_service_id} "
+            f"doesn't have a Wallet Relying Party associated."
+        )
+
+    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
+
+    modulus=crypto.key_size
+    exponent=crypto.exponent
+    priv_key = ec.generate_private_key(ec.SECP256R1(), default_backend() )
+
+    #dados da RP
+    TypeIdentifier={
+        "http://data.europa.eu/eudi/id/EORI-No":"EOR",
+        "http://data.europa.eu/eudi/id/LEI":"LEI" ,
+        "http://data.europa.eu/eudi/id/EUID":"NTR" ,
+        "http://data.europa.eu/eudi/id/VATIN":"VAT"  ,
+        "http://data.europa.eu/eudi/id/TIN":"TIN",
+        "http://data.europa.eu/eudi/id/Excise":"EXC"
+    }
+    #commonName
+    tradeName = wrp_service[0]["wrp_service_trade_name"]
+
+    #uniformResourceIdentifier
+    supportURI = wrp_service[0]["supportURI"][0]
+
+    legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
+    
+    #dados da legalEntity
+    #caso for natural person é serialNumber no caso de uma legal person organizationIdentifier
+    identifier = legal_entity[0]["identifier"]
+    country = legal_entity[0]["country"]
+
+    email = None
+    if email:
+        email = legal_entity[0]["email"][0]
+    phone = None
+    if phone:
+        phone = legal_entity[0]["phone"][0]
+
+    if legal_entity[0]["LegalPerson"] is None:
+        #se user for natural person
+        givenName=legal_entity[0]["NaturalPerson"]["givenName"]
+        #surname
+        surname=legal_entity[0]["NaturalPerson"]["familyName"]
+
+        first = legal_entity[0]["identifier"][0]
+        country_code = "XG" if TypeIdentifier[first['type']] == "LEI" else country
+
+        serial_number = (
+            f"{TypeIdentifier[first['type']]}"
+            f"{country_code}-"
+            f"{first['identifier']}"
+        )
+
+        certificateRequest= generateCertificateRequest(priv_key=priv_key, commonName=tradeName, countryName=country, uniformResourceIdentifier=supportURI, 
+                                                       givenName=givenName, surname=surname, serialNumber=serial_number, email=email)
+        
+    else:
+        #se user for legal person
+        #dados da legal person
+        #organizationName
+        legalName = legal_entity[0]["LegalPerson"]["legalName"][0]
+
+        first = legal_entity[0]["identifier"][0]
+        country_code = "XG" if TypeIdentifier[first['type']] == "LEI" else country
+
+        organizationIdentifier = (
+            f"{TypeIdentifier[first['type']]}"
+            f"{country_code}-"
+            f"{first['identifier']}"
+        )
+        
+        certificateRequest = generateCertificateRequest(priv_key=priv_key, commonName=tradeName, countryName=country, uniformResourceIdentifier=supportURI, 
+                                                       organizationName=legalName, organizationIdentifier=organizationIdentifier, email=None)
+
+    #como as TSLs, ex: lang en, description=test  
+    #servicesDescription=RP[0]["srvDescription"]#como as TSLs, ex: lang en, description=test  
+    #entitlement=RP[0]["entitlement"]
+    # verificar legal entity se é pertence ao sector público, se sim True, se não False
+    isPSB= False
+#### ------
+    # password=request.form.get("Password")
+
+
+    certificateRequestString = "-----BEGIN CERTIFICATE REQUEST-----\n"+ base64.b64encode(certificateRequest).decode("utf-8") + "\n"+ "-----END CERTIFICATE REQUEST-----"
+    certificateAuthorityName = getCertificateAuthorityName(country)
+    certificateRequestBody = getJsonBody(certificateRequestString, certificateAuthorityName, country)
+
+    postUrl = "https://" + ejbca.cahost + "/ejbca/ejbca-rest-api/v1" + ejbca.endpoint
+
+    headers ={
+        "Content-Type": "application/json",
+        'Authorization': 'Bearer test',
+    }
+
+    clientP12ArchiveFilepath = ejbca.clientP12ArchiveFilepath
+    clientP12ArchivePassword = ejbca.clientP12ArchivePassword
+    ManagementCA = ejbca.managementCA
+
+    trustCA= getTrustManagerOfCACertificate(ManagementCA)
+    
+    response = http_post_requests_with_custom_ssl_context(ManagementCA, clientP12ArchiveFilepath, clientP12ArchivePassword, postUrl,certificateRequestBody, headers)
+
+    response = response.json()
+
+    certificate = response.get("certificate")
+
+    if not certificate:
+        extra = {"response": response}
+        logger.error("Error EJBCA response.", extra=extra)
+        return error_invalid("Error EJBCA response.")
+
+    certificate_bytes = base64.b64decode(certificate)
+
+    certificate = x509.load_der_x509_certificate(certificate_bytes, default_backend())
+
+    serial_number=response["serial_number"]
+
+    if error_type == "expired":
+        now = datetime.now(timezone.utc)
+
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(certificate.subject)
+            .issuer_name(certificate.issuer)
+            .public_key(certificate.public_key())
+            .serial_number(certificate.serial_number)
+            .not_valid_before(now - timedelta(days=30))
+            .not_valid_after(now - timedelta(days=1))
+            .sign(
+                private_key=priv_key,
+                algorithm=hashes.SHA256(),
+                backend=default_backend()
+            )
+        )
+
+    elif error_type == "invalid_signature":
+        invalid_signature_key = ec.generate_private_key(
+            ec.SECP256R1(),
+            default_backend()
+        )
+
+        certificate_builder = (
+            x509.CertificateBuilder()
+            .subject_name(certificate.subject)
+            .issuer_name(certificate.issuer)
+            .public_key(certificate.public_key())
+            .serial_number(certificate.serial_number)
+            .not_valid_before(certificate.not_valid_before_utc)
+            .not_valid_after(certificate.not_valid_after_utc)
+        )
+
+        for extension in certificate.extensions:
+            certificate_builder = certificate_builder.add_extension(
+                extension.value,
+                critical=extension.critical
+            )
+
+        certificate = certificate_builder.sign(
+            private_key=invalid_signature_key,
+            algorithm=hashes.SHA256(),
+            backend=default_backend()
+        )
+
+    p12=pkcs12.serialize_key_and_certificates(
+        name=tradeName.encode("utf-8"),key=priv_key,cert=certificate, cas=[trustCA],
+        encryption_algorithm=serialization.BestAvailableEncryption(password.encode("utf-8"))
+    )
+
+    tag = uuid.uuid4()
+
+    file_name = tradeName + "_" + str(tag)
+
+    p12_temp.update({file_name:{"response": p12, "expires":datetime.now() + timedelta(minutes=cfgserv.deffered_expiry)}})
+
+    cert = certificate.subject.rfc4514_string().split(",")
+    dic = {parte.split("=")[0]: parte for parte in cert}
+    order = [dic.get("C"),
+            #dic.get("O"),
+            dic.get("CN")]
+    aux = [v for k, v in dic.items() if k not in ["C", "O", "CN"]]
+
+    cert_subject_rfc4514_string = ",".join(order + aux)
+
+    certificate_presentation={
+        "certificate_issuer":certificate.issuer.rfc4514_string(),
+        "certificate_distinguished_name":cert_subject_rfc4514_string,
+        "validity_from":certificate.not_valid_before_utc,
+        "validity_to":certificate.not_valid_after_utc,
+    }
+
+    file_base64 = base64.b64encode(p12).decode()
+    serial_number = response["serial_number"]
+
+    return jsonify({
+        "status": "success",
+        "code": 200,
+        "data": {
+            "filename": "document_with_signature.json",
+            "file_base64": file_base64
+        }
+    })
+
+@rpr.route("/intended_use/certificate_error", methods=["POST"])
+def intended_use_registration_certificate_error():
+    data = request.get_json(silent=True)
+
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(
+        data,
+        ["hash_pid", "intended_use_id", "error_type"]
+    )
+
+    if missing:
+        return error_response("Missing required fields.", missing)
+
+    hash_pid = data.get("hash_pid")
+    intended_use_id = data.get("intended_use_id")
+    error_type = data.get("error_type")
+
+    supported_errors = ["invalid_signature"]
+
+    if error_type not in supported_errors:
+        return error_invalid(
+            "Invalid error_type.",
+            {
+                "allowed_values": supported_errors
+            }
+        )
+
+    user_id = db.check_user(hash_pid)
+    if user_id is None:
+        return error_invalid("Invalid hash_pid")
+    
+    if user_id != db.check_intendedUse(intended_use_id):
+        return error_invalid(f"Intended Use id {intended_use_id} doesn't belong to this user")
+    
+    intended_use = db.get_intended_use_id(intended_use_id)
+
+    wrp_service = db.get_wrp_service_id(db.get_wrps_intended_use(intended_use_id))
+
+    if wrp_service == []:
+        return error_invalid(f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party Service associated.")
+
+    intermediary_id = data.get("intermediary_id")
+    if intermediary_id:
+        if user_id != db.check_wrp_service(intermediary_id):
+            return error_invalid(f"Wallet Relying Party Service id {intermediary_id} doesn't belong to this user")
+        
+        wrp_intermediary = db.get_wrp_intermediary(intermediary_id)
+        if not wrp_intermediary or wrp_service[0]["wrp_service_id"] != wrp_intermediary[0]:
+            return error_invalid(
+                f"The usesIntermediary ID {intermediary_id} does not belong to this Wallet Relying Party"
+            )
+
+    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
+        
+    legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
+
+    now = datetime.now(timezone.utc)
+    iat = int(now.timestamp())
+
+    name = wrp_service[0]["wrp_service_trade_name"]
+    supportURI = wrp_service[0]["supportURI"][0]
+    purpose = intended_use[0]["purpose"]
+    info_uri = None
+    if legal_entity[0].get("infoURI") and len(legal_entity[0]["infoURI"]) > 0:
+        info_uri = legal_entity[0]["infoURI"][0]
+    country = legal_entity[0]["country"]
+
+    id = legal_entity[0]["identifier"][0]["identifier"]
+
+    privacy_policy = intended_use[0]["privacyPolicy"][0]["policyURI"]
+
+    entitlement = wrp_service[0]["entitlements"]
+    public_body = wrp[0]["isPSB"]
+    srv_description = wrp_service[0]["srvDescription"]
+
+    TypeIdentifier={
+        "http://data.europa.eu/eudi/id/EORI-No":"EOR",
+        "http://data.europa.eu/eudi/id/LEI":"LEI" ,
+        "http://data.europa.eu/eudi/id/EUID":"NTR" ,
+        "http://data.europa.eu/eudi/id/VATIN":"VAT"  ,
+        "http://data.europa.eu/eudi/id/TIN":"TIN",
+        "http://data.europa.eu/eudi/id/Excise":"EXC"
+    }
+    
+    identifier = legal_entity[0]["identifier"][0]
+
+    country_code = "XG" if TypeIdentifier[identifier['type']] == "LEI" else country
+
+    sub_id = (
+        f"{TypeIdentifier[identifier['type']]}"
+        f"{country_code}-"
+        f"{identifier['identifier']}"
+    )
+
+    headers={
+        "accept": "application/json",
+        "X-API-Key": cfgserv.statuslist_apikey,
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+
+    expiry_date = (now + timedelta(days=6*30)).strftime("%Y-%m-%d")
+
+    data = {
+        "country": "FC",
+        "doctype": "wrprc",
+        "expiry_date": expiry_date
+    }
+
+    response = requests.post(
+        cfgserv.url_statuslist,
+        headers=headers,
+        data=data
+    )
+
+    status=response.json()
+
+    if "status_list" not in status:
+        return error_invalid("Status List error")
+
+    status_idx=status["status_list"]["idx"]
+    status_uri=status["status_list"]["uri"]
+
+    credentials = [
+        cred
+        for item in intended_use
+        for cred in item.get("credentials", [])
+    ]
+
+    json_payload = { 
+                        "name": name,
+                        "purpose": purpose, 
+                        "country": country,
+                        "sub": sub_id,
+                        "registry_uri": cfgserv.service_url,
+                        "privacy_policy": privacy_policy, 
+                        "policy_id": [
+                            "0.4.0.19475.3.1"
+                        ],
+                        "iat": iat, 
+                        "credentials": credentials,
+                        "entitlements": entitlement,
+                        "public_body": False,
+                        "srv_description": srv_description,
+                        "support_uri":supportURI,
+                        "status": { 
+                            "status_list": { 
+                                            "idx": status_idx, "uri": status_uri
+                            } 
+                        }
+        }
+
+    if info_uri:
+        json_payload["info_uri"] = info_uri
+    
+    if wrp_service[0].get("provides_attestations"):
+        json_payload["provides_attestations"] = wrp_service[0]["provides_attestations"]
+
+    sa = wrp[0].get("SupervisoryAuthority")
+    if sa:
+        supervisory_authority = {}
+
+        if sa.get("email"):
+            supervisory_authority["email"] = sa["email"][0]
+
+        if sa.get("phone"):
+            supervisory_authority["phone"] = sa["phone"][0]
+
+        if sa.get("formURI"):
+            supervisory_authority["uri"] = sa["formURI"][0]
+
+        if supervisory_authority:
+            json_payload["supervisory_authority"] = supervisory_authority
+    
+    if legal_entity[0]["LegalPerson"] is None:
+        givenName=legal_entity[0]["NaturalPerson"]["givenName"]
+        surname=legal_entity[0]["NaturalPerson"]["familyName"]
+
+        certificate_policy = cfgserv.service_url + "certificate_policy"
+        json_payload.update({
+            "sub_gn": givenName,
+            "sub_fn":surname,
+            "certificate_policy":certificate_policy
+        })
+
+        
+    else:
+        
+        legalName = legal_entity[0]["LegalPerson"]["legalName"][0]
+        #legalName=legal_person[0]["legalName"]
+        certificate_policy = cfgserv.service_url + "certificate_policy"
+        json_payload.update({
+            "sub_ln": legalName,
+            "certificate_policy":certificate_policy
+        })
+
+    if intermediary_id:
+        rp_intermediary = db.get_wrp_service_id(intermediary_id)
+        wrp_of_intermediary = db.get_wrp_id(rp_intermediary[0]["wrp_id"])
+        legalentity_intermediary = db.get_legal_entity_id(wrp_of_intermediary[0]["provider_id"])
+
+        identifier = legalentity_intermediary[0]["identifier"][0]
+        country = legalentity_intermediary[0]["country"]
+
+        country_code = "XG" if TypeIdentifier[identifier['type']] == "LEI" else country
+
+        aux = (
+            f"{TypeIdentifier[identifier['type']]}"
+            f"{country_code}-"
+            f"{identifier['identifier']}"
+        )
+
+        json_payload.update({
+            "intermediary": {
+                "sub": aux,
+                "sname": rp_intermediary[0]["wrp_service_trade_name"]
+            }
+        })
+
+    with open(cfgserv.wrprc_certificate, "rb") as f:
+        cert = x509.load_der_x509_certificate(f.read(), default_backend())
+
+    base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+
+    file_bytes = json.dumps(json_payload).encode()
+
+    base64_payload=base64.b64encode(file_bytes).decode("utf-8")
+
+    cbor_data= cbor2.dumps(json_payload)
+
+    base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
+
+    payload=json.dumps({
+
+            "documents":[
+                {
+                    "document": base64_cbor,
+                    "signature_format": "CB",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+                },
+                {
+
+
+                    "document": base64_payload,
+                    "signature_format": "J",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+
+                } ],
+        "endEntityCertificate": base64_cert,
+        "certificateChain": [],
+        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
+
+    })
+
+    headers={
+        'Content-Type': 'application/json'
+    }
+
+    calculate_hash=requests.post(url=cfgserv.sca_signer_url+"/signatures/calculate_hash",headers=headers, data=payload)
+
+    hashes1 = calculate_hash.json()["hashes"]
+
+    base64_string_cbor = urllib.parse.unquote(hashes1[0])
+
+    data_to_be_signed_cbor = base64.b64decode(base64_string_cbor)
+
+    base64_string_JWT = urllib.parse.unquote(hashes1[1])
+    
+    data_to_be_signed_jwt = base64.b64decode(base64_string_JWT)
+
+    signature_date = calculate_hash.json()["signature_date"]
+
+    with open(cfgserv.wrprc_privateKey, "rb") as f:
+        private_key = serialization.load_pem_private_key(
+        f.read(),
+        password=None,
+        backend=default_backend()
+    )
+
+    signature_cbor = private_key.sign(
+        data_to_be_signed_cbor,
+        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
+    )
+    base64_signature_cbor= base64.b64encode(signature_cbor).decode()
+
+    signature_jwt = private_key.sign(
+        data_to_be_signed_jwt,
+        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
+    )
+    base64_signature_jwt= base64.b64encode(signature_jwt).decode()
+
+    if error_type == "invalid_signature":
+
+        json_payload["name"] = "Invalid Signature"
+        
+        file_bytes = json.dumps(json_payload).encode()
+        
+        base64_payload=base64.b64encode(file_bytes).decode("utf-8")
+    
+        cbor_data= cbor2.dumps(json_payload)
+    
+        base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
+
+        payload = {
+            "documents": [
+                {
+                    "document": base64_cbor,
+                    "signature_format": "CB",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+                },
+                {
+                    "document": base64_payload,
+                    "signature_format": "J",
+                    "conformance_level":"Ades-B-B",
+                    "signed_envelope_property": "ENVELOPING",
+                    "container": "No"
+                }
+            ],
+            "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
+            "returnValidationInfo": False,
+            "endEntityCertificate": base64_cert,
+            "certificateChain": [],
+            "signatures":[base64_signature_cbor, base64_signature_jwt],
+            "date": signature_date
+        }
+        
+        if cfgserv.wrprc_intermediate:
+            with open(cfgserv.wrprc_intermediate, "rb") as f:
+                intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
+    
+            base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+            payload["certificateChain"].append(base64_intermediate_cert)
+    
+        payload = json.dumps(payload).encode()
+
+    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
+    
+    document_with_signature=obtain_signed_document.json()["documentWithSignature"]
+
+    data=json.loads(base64.b64decode(document_with_signature[1]).decode("utf-8"))
+
+    jwt_payload=data["payload"]
+    jwt_header=data["signatures"][0]["protected"]
+    jwt_signature=data["signatures"][0]["signature"]
+
+    jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
+
+    file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
+    cose_base64 = document_with_signature[0]
+
+    return jsonify({
+        "status": "success",
+        "code": 200,
+        "data": {
+            "filename": "document_with_signature.json",
+            "file_base64": file_base64,
+            "cose_base64": cose_base64
+        }
+    })
