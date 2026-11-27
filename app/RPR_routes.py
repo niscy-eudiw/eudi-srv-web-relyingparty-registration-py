@@ -2049,6 +2049,126 @@ def list_supervisory_authority():
     return list_response("Supervisory Authority retrieved successfully.", result, "supervisory_authority")
 
 ## -wrp
+def validate_wrp_services(wrp_services, user_id, claimed_intended_uses):
+    """Validates a list of WalletRelyingPartyService objects (types, ownership, uniqueness).
+
+    Returns (error, normalized_services). error is a Flask response tuple or None.
+    claimed_intended_uses is a set shared by the whole request, so the same Intended Use
+    cannot be given to two services in one request.
+    """
+    if not isinstance(wrp_services, list) or not wrp_services or not all(isinstance(svc, dict) for svc in wrp_services):
+        return error_response("Field 'WalletRelyingPartyService' must be a non-empty array of objects."), None
+
+    entitlement_values = cfgserv.relying_party["Entitlement"]
+    normalized = []
+
+    for svc in wrp_services:
+        missing = validate_required_fields(svc, ["serviceTradeName", "serviceIdentifier", "supportURIs", "srvDescription", "email", "phone"])
+        if missing:
+            return error_response("Missing required fields.", missing), None
+
+        for field in ("serviceTradeName", "serviceIdentifier", "email", "phone"):
+            if not is_non_blank_str(svc[field]) or len(svc[field].strip()) > 255:
+                return error_invalid(f"{field} must be a non-empty string with at most 255 characters."), None
+
+        if "isIntermediary" in svc and not isinstance(svc["isIntermediary"], bool):
+            return error_invalid("isIntermediary must be a boolean."), None
+
+        for field in ("intendedUse_ids", "providesAttestations_ids", "usesIntermediary", "servedWRPServices"):
+            ids = svc.get(field) or []
+            if not is_list_of(ids, is_id):
+                return error_invalid(f"{field} must be an array of positive integers."), None
+
+            # Repeated ids in the request are a 400; 409 is reserved for conflicts with existing rows
+            repeated = sorted({value for value in ids if ids.count(value) > 1})
+            if repeated:
+                return error_invalid(f"{field} contains repeated ids: {', '.join(map(str, repeated))}."), None
+
+        for field in ("entitlements", "subEntitlements"):
+            if not is_list_of(svc.get(field) or [], is_str):
+                return error_invalid(f"{field} must be an array of strings."), None
+
+        if not is_list_of(svc["supportURIs"], is_non_blank_str):
+            return error_invalid("supportURIs must be an array of non-empty strings."), None
+
+        if not is_list_of(svc["srvDescription"], lambda value: isinstance(value, dict)):
+            return error_invalid("srvDescription must be an array of objects."), None
+
+        srv_descriptions = []
+        for srvDescription in svc["srvDescription"]:
+            missing = validate_required_fields(srvDescription, ["lang", "content"])
+            if missing:
+                return error_response("Missing required fields.", missing), None
+
+            if not isinstance(srvDescription["lang"], str) or not isinstance(srvDescription["content"], str):
+                return error_invalid("srvDescription lang and content must be strings."), None
+
+            if srvDescription["lang"] not in cfgserv.eu_languages:
+                return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}"), None
+
+            srv_descriptions.append({"lang": srvDescription["lang"], "content": srvDescription["content"].strip()})
+
+        intendedUse_ids = svc.get("intendedUse_ids") or []
+        entitlements = svc.get("entitlements") or []
+        subEntitlements = svc.get("subEntitlements") or []
+        providesAttestations_ids = svc.get("providesAttestations_ids") or []
+        usesIntermediarys = svc.get("usesIntermediary") or []
+        servedWRPServices = svc.get("servedWRPServices") or []
+
+        for entitlement in entitlements:
+            if entitlement not in entitlement_values:
+                return error_invalid(f"Invalid entitlement. Must be one of: {', '.join(entitlement_values)}"), None
+
+        for sub_entitlement in subEntitlements:
+            if sub_entitlement not in entitlement_values:
+                return error_invalid(f"Invalid sub entitlement. Must be one of: {', '.join(entitlement_values)}"), None
+
+        for servedWRPService in servedWRPServices:
+            if user_id != db.check_wrp_service(servedWRPService):
+                return error_invalid(f"The served WRP Service ID {servedWRPService} does not belong to this user"), None
+
+        for usesIntermediary in usesIntermediarys:
+            if user_id != db.check_wrp_service(usesIntermediary):
+                return error_invalid(f"The usesIntermediary ID {usesIntermediary} does not belong to this user"), None
+
+            if db.check_wrp_intermediary(usesIntermediary) != 1:
+                return error_invalid(f"The usesIntermediary ID {usesIntermediary} is not a Intermediary Wallet Relying Party Service"), None
+
+        for providesAttestations_id in providesAttestations_ids:
+            if user_id != db.check_provided_attestation(providesAttestations_id):
+                return error_invalid(f"The providesAttestations ID {providesAttestations_id} does not belong to this user"), None
+
+        for intendedUse_id in intendedUse_ids:
+            if user_id != db.check_intendedUse(intendedUse_id):
+                return error_invalid(f"The intendedUse ID {intendedUse_id} does not belong to this user"), None
+
+            if intendedUse_id in claimed_intended_uses:
+                return error_invalid(f"intendedUse_ids contains repeated ids across services in this request: {intendedUse_id}."), None
+
+            if db.check_wrp_intendedUse(intendedUse_id) != []:
+                return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party service"), None
+
+            claimed_intended_uses.add(intendedUse_id)
+
+        normalized.append({
+            "serviceTradeName": svc["serviceTradeName"].strip(),
+            "serviceIdentifier": svc["serviceIdentifier"].strip(),
+            "email": svc["email"].strip(),
+            "phone": svc["phone"].strip(),
+            # A service that uses intermediaries cannot itself be an intermediary
+            "isIntermediary": False if usesIntermediarys else svc.get("isIntermediary", False),
+            "entitlements": entitlements,
+            "subEntitlements": subEntitlements,
+            "usesIntermediary": usesIntermediarys,
+            "supportURIs": [value.strip() for value in svc["supportURIs"]],
+            "srvDescription": srv_descriptions,
+            "providesAttestations_ids": providesAttestations_ids,
+            "intendedUse_ids": intendedUse_ids,
+            "servedWRPServices": servedWRPServices,
+        })
+
+    return None, normalized
+
 @rpr.route('/wallet_rp/create', methods=['POST'])
 def create_wrp():
 
@@ -2056,8 +2176,9 @@ def create_wrp():
 
     if not data:
         return error_response("Invalid or missing JSON body")
-
+    
     missing = validate_required_fields(data, ["hash_pid", "WalletRelyingParty"])
+    
     if missing:
         return error_response("Missing required fields.", missing)
 
@@ -2072,34 +2193,20 @@ def create_wrp():
         return error_invalid("Invalid hash_pid")
 
     #validation
+    to_insert = []
+    claimed_intended_uses = set()
+
     for wrp in wrps:
-        missing = validate_required_fields(wrp, ["supportURI", "provider_id", "srvDescription", 
-                                                 "isPSB", "entitlements", 
-                                                 "supervisoryAuthority", "registryURI"])
+        missing = validate_required_fields(wrp, ["provider_id", "isPSB", "supervisoryAuthority", "registryURI", "WalletRelyingPartyService"])
         if missing:
             return error_response("Missing required fields.", missing)
 
         if not isinstance(wrp["isPSB"], bool):
             return error_invalid("isPSB must be a boolean.")
 
-        if "isIntermediary" in wrp and not isinstance(wrp["isIntermediary"], bool):
-            return error_invalid("isIntermediary must be a boolean.")
-
         for field in ("provider_id", "supervisoryAuthority"):
             if not is_id(wrp[field]):
                 return error_invalid(f"{field} must be a positive integer.")
-
-        for field in ("intendedUse_ids", "providesAttestations_id", "usesIntermediary"):
-            if not is_list_of(wrp.get(field) or [], is_id):
-                return error_invalid(f"{field} must be an array of positive integers.")
-
-        if not is_list_of(wrp["supportURI"], is_non_blank_str):
-            return error_invalid("supportURI must be an array of non-empty strings.")
-
-        wrp["supportURI"] = [value.strip() for value in wrp["supportURI"]]
-
-        if not is_list_of(wrp["entitlements"], is_str):
-            return error_invalid("entitlements must be an array of strings.")
 
         if not isinstance(wrp["registryURI"], str):
             return error_invalid("registryURI must be a string.")
@@ -2108,85 +2215,41 @@ def create_wrp():
         if tradeName is not None and (not isinstance(tradeName, str) or len(tradeName) > 255):
             return error_invalid("tradeName must be a string with at most 255 characters.")
 
-        if not is_list_of(wrp["srvDescription"], lambda value: isinstance(value, dict)):
-            return error_invalid("srvDescription must be an array of objects.")
-
-        for srvDescription in wrp["srvDescription"]:
-            missing = validate_required_fields(srvDescription, ["lang", "content"])
-            if missing:
-                return error_response("Missing required fields.", missing)
-
-            if not isinstance(srvDescription["lang"], str) or not isinstance(srvDescription["content"], str):
-                return error_invalid("srvDescription lang and content must be strings.")
-
-            if srvDescription["lang"] not in cfgserv.eu_languages:
-                return error_invalid(f"Invalid srvDescription_lang. Must be one of: {', '.join(cfgserv.eu_languages)}")
-
         supervisoryAuthority = wrp.get("supervisoryAuthority")
-        usesIntermediarys = wrp.get("usesIntermediary") or []
-        providesAttestations_ids = wrp.get("providesAttestations_id") or []
         provider_id = wrp.get("provider_id")
-        intendedUse_ids = wrp.get("intendedUse_ids") or []
-        entitlements = wrp.get("entitlements", [])
-        
+
         if user_id != db.check_supervisory_authority(supervisoryAuthority):
             return error_invalid(f"The supervisoryAuthority ID {supervisoryAuthority} does not belong to this user")
-        
-        if usesIntermediarys:
 
-            for usesIntermediary in usesIntermediarys:
-                if user_id != db.check_wrp(usesIntermediary):
-                    return error_invalid(f"The usesIntermediary ID {usesIntermediary} does not belong to this user")
-                
-                if db.check_wrp_intermediary(usesIntermediary) != 1:
-                    return error_invalid(f"The usesIntermediary ID {usesIntermediary} is not a Intermediary Wallet Relying Party")
-
-        if providesAttestations_ids:
-            for providesAttestations_id in providesAttestations_ids:
-                if user_id != db.check_provided_attestation(providesAttestations_id):
-                    return error_invalid(f"The providesAttestations ID {providesAttestations_id} does not belong to this user")
-        
         if user_id != db.check_provider(provider_id):
                 return error_invalid(f"The Provider ID {provider_id} does not belong to this user")
-        
-        if intendedUse_ids:
-            for intendedUse_id in intendedUse_ids:
-                if user_id != db.check_intendedUse(intendedUse_id):
-                    return error_invalid(f"The intendedUse ID {intendedUse_id} does not belong to this user")
 
-                if db.check_wrp_intendedUse(intendedUse_id) != []:
-                    return error_invalid(f"Intended Use id {intendedUse_id} already belongs to other wallet relying party")
-        
-        for entitlement in entitlements:
-            if entitlement not in cfgserv.relying_party["Entitlement"]:
-                return error_invalid(f"Invalid entitlement. Must be one of: {', '.join(cfgserv.relying_party['Entitlement'])}")
+        error, wrp_services = validate_wrp_services(wrp["WalletRelyingPartyService"], user_id, claimed_intended_uses)
+        if error:
+            return error
 
-    to_insert = [
-        {
-            "provider_id": wrp["provider_id"],
-            "tradeName": wrp.get("tradeName"),
+        to_insert.append({
+            "provider_id": provider_id,
+            "tradeName": tradeName,
             "isPSB": wrp["isPSB"],
             "registryURI": wrp["registryURI"],
-            # A WRP that uses intermediaries cannot itself be an intermediary
-            "isIntermediary": False if wrp.get("usesIntermediary") else wrp.get("isIntermediary", False),
-            "supervisoryAuthority": wrp["supervisoryAuthority"],
-            "entitlements": wrp["entitlements"],
-            "usesIntermediary": wrp.get("usesIntermediary") or [],
-            "supportURI": wrp["supportURI"],
-            "srvDescription": wrp["srvDescription"],
-            "providesAttestations_id": wrp.get("providesAttestations_id") or [],
-            "intendedUse_ids": wrp.get("intendedUse_ids") or [],
-        }
-        for wrp in wrps
-    ]
+            "supervisoryAuthority": supervisoryAuthority,
+            "WalletRelyingPartyService": wrp_services,
+        })
 
     #insert data base
     try:
-        result = db.insert_wrps_atomic(to_insert, user_id)
+        created = db.insert_wrps_with_services_atomic(to_insert, user_id)
     except db.DatabaseError as e:
         return db_write_error(e, "Error creating Wallet Relying Party. No data was saved.")
 
-    return create_response("Wallet Relying Party created successfully", "Wallet Relying Party ids", result)
+    result = []
+    for wrp_id, wrp_service_ids in created:
+        result.append("Wallet Relying Party: " + str(wrp_id))
+        for wrp_service_id in wrp_service_ids:
+            result.append("Wallet Relying Party service: " + str(wrp_service_id))
+
+    return create_response("Wallet Relying Party and Wallet Relying Party service created successfully", "wrp ids", result)
 
 @rpr.route('/wallet_rp/list', methods=['POST'])
 def list_wrp():
@@ -2209,19 +2272,218 @@ def list_wrp():
 
     return list_response("Wallet Relying Party retrieved successfully.", result, "wrp")
 
-@rpr.route('/wallet_rp/update_intended_use', methods=['POST'])
+@rpr.route('/wallet_rp/update_wrp_service', methods=['POST'])
+def update_wrp_service():
+    data = request.get_json(silent=True)
+
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["hash_pid", "WalletRelyingParty_id", "WalletRelyingPartyService_ids"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+
+    hash_pid = data.get("hash_pid")
+    WalletRelyingParty_id = data.get("WalletRelyingParty_id")
+    WalletRelyingPartyService_ids = data.get("WalletRelyingPartyService_ids") or []
+
+    if not is_id(WalletRelyingParty_id):
+        return error_invalid("WalletRelyingParty_id must be a positive integer.")
+
+    if not is_list_of(WalletRelyingPartyService_ids, is_id):
+        return error_invalid("WalletRelyingPartyService_ids must be an array of positive integers.")
+
+    user_id = db.check_user(hash_pid)
+    if user_id is None:
+        return error_invalid("Invalid hash_pid")
+
+    #verification
+    if user_id != db.check_wrp(WalletRelyingParty_id):
+        return error_invalid(f"Wallet Relying Party id {WalletRelyingParty_id} doesn't belong to this user")
+
+    for WalletRelyingPartyService_id in WalletRelyingPartyService_ids:
+        if user_id != db.check_wrp_service(WalletRelyingPartyService_id):
+            return error_invalid(f"Wallet Relying Party Service id {WalletRelyingPartyService_id} doesn't belong to this user")
+
+        if db.check_wrp_wrpService(WalletRelyingPartyService_id) != []:
+            return error_invalid(f"Wallet Relying Party Service id {WalletRelyingPartyService_id} already belongs to other wallet relying party.")
+
+    #insert data base
+    try:
+        updated = db.update_wrp_wrpServices_atomic(WalletRelyingParty_id, WalletRelyingPartyService_ids)
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error associating Wallet Relying Party Services. No data was saved.")
+
+    return update_response("Wallet Relying Party Wallet Relying Party Service associations updated successfully", updated)
+
+@rpr.route('/wallet_rp/remove_wrp_service', methods=['POST'])
+def remove_wrp_service():
+
+    data = request.get_json(silent=True)
+
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(
+        data,
+        [
+            "hash_pid",
+            "WalletRelyingParty_id",
+            "WalletRelyingPartyService_ids"
+        ]
+    )
+
+    if missing:
+        return error_response("Missing required fields.", missing)
+
+    hash_pid = data.get("hash_pid")
+    wallet_relying_party_id = data.get("WalletRelyingParty_id")
+    wallet_relying_party_service_ids = data.get(
+        "WalletRelyingPartyService_ids",
+        []
+    )
+
+    user_id = db.check_user(hash_pid)
+
+    if user_id is None:
+        return error_invalid("Invalid hash_pid")
+
+    if user_id != db.check_wrp(wallet_relying_party_id):
+        return error_invalid(
+            f"Wallet Relying Party id {wallet_relying_party_id} "
+            f"doesn't belong to this user"
+        )
+
+    for service_id in wallet_relying_party_service_ids:
+
+        if user_id != db.check_wrp_service(service_id):
+            return error_invalid(
+                f"Wallet Relying Party Service id {service_id} "
+                f"doesn't belong to this user"
+            )
+
+    current_wrp_services = db.get_wrp_wrpService(
+        wallet_relying_party_id
+    )
+
+    current_wrp_service_ids = {
+        row[0] for row in current_wrp_services
+    }
+
+    if not current_wrp_service_ids:
+        return error_invalid(
+            "Wallet Relying Party has no Wallet Relying Party Service "
+            "(invalid state)"
+        )
+
+    valid_wrp_service_to_remove = [
+        service_id
+        for service_id in wallet_relying_party_service_ids
+        if service_id in current_wrp_service_ids
+    ]
+
+    if not valid_wrp_service_to_remove:
+        return error_invalid(
+            "None of the provided Wallet Relying Party Services "
+            "are associated with this Wallet Relying Party"
+        )
+
+    remaining_services = (
+        len(current_wrp_service_ids)
+        - len(valid_wrp_service_to_remove)
+    )
+
+    if remaining_services < 1:
+        return error_invalid(
+            "A Wallet Relying Party must have at least "
+            "one Wallet Relying Party Service"
+        )
+
+    deleted_count = db.delete_wrp_wrp_service(
+        wallet_relying_party_id,
+        valid_wrp_service_to_remove
+    )
+
+    return update_response(
+        "Wallet Relying Party / Wallet Relying Party Service "
+        "associations removed successfully",
+        deleted_count
+    )
+
+## wrp_service
+@rpr.route('/wallet_rp_service/create', methods=['POST'])
+def create_wrp_service():
+
+    data = request.get_json(silent=True)
+
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["hash_pid", "WalletRelyingParty", "WalletRelyingPartyService"])
+
+    if missing:
+        return error_response("Missing required fields.", missing)
+
+    hash_pid = data.get("hash_pid")
+    wrp = data.get("WalletRelyingParty")
+
+    if not is_id(wrp):
+        return error_invalid("WalletRelyingParty must be a positive integer.")
+
+    user_id = db.check_user(hash_pid)
+    if user_id is None:
+        return error_invalid("Invalid hash_pid")
+
+    #validation
+    if user_id != db.check_wrp(wrp):
+        return error_invalid(f"The Wallet RelyingParty ID {wrp} does not belong to this user")
+
+    error, wrp_services = validate_wrp_services(data.get("WalletRelyingPartyService"), user_id, set())
+    if error:
+        return error
+
+    #insert data base
+    try:
+        result = db.insert_wrp_services_atomic(wrp, wrp_services, user_id)
+    except db.DatabaseError as e:
+        return db_write_error(e, "Error creating Wallet Relying Party Service. No data was saved.")
+
+    return create_response("Wallet Relying Party Service created successfully", "Wallet Relying Party Service new IDs", result)
+
+@rpr.route('/wallet_rp_service/list', methods=['POST'])
+def list_wrp_service():
+    data = request.get_json(silent=True)
+    
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["hash_pid"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+    
+    hash_pid = data.get("hash_pid")
+    
+    user_id = db.check_user(hash_pid)
+    if user_id is None:
+        return error_invalid("Invalid hash_pid")
+
+    result = db.get_wrp_service(user_id)
+
+    return list_response("Wallet Relying Party Service retrieved successfully.", result, "wrp_service")
+
+@rpr.route('/wallet_rp_service/update_intended_use', methods=['POST'])
 def update_wrp_intended_use():
     data = request.get_json(silent=True)
    
     if not data:
         return error_response("Invalid or missing JSON body")
 
-    missing = validate_required_fields(data, ["hash_pid", "wrp_id", "intended_use_ids"])
+    missing = validate_required_fields(data, ["hash_pid", "wrp_service_id", "intended_use_ids"])
     if missing:
         return error_response("Missing required fields.", missing)
     
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     intended_use_ids = data.get("intended_use_ids", [])
     
     user_id = db.check_user(hash_pid)
@@ -2229,35 +2491,35 @@ def update_wrp_intended_use():
         return error_invalid("Invalid hash_pid")
     
     #verification
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
     
     for intended_use_id in intended_use_ids:
         if user_id != db.check_intendedUse(intended_use_id):
             return error_invalid(f"Intended Use id {intended_use_id} doesn't belong to this user")
 
         if db.check_wrp_intendedUse(intended_use_id) != []:
-            return error_invalid(f"Intended Use id {intended_use_id} already belongs to other wallet relying party")
+            return error_invalid(f"Intended Use id {intended_use_id} already belongs to other wallet relying party service")
 
     #insert data base
     for intended_use_id in intended_use_ids:
-        db.insert_wrp_intended_use(wrp_id, intended_use_id)
+        db.insert_wrp_intended_use(wrp_service_id, intended_use_id)
 
     return update_response("Wallet Relying Party Intended Use associations updated successfully", len(intended_use_ids))
 
-@rpr.route('/wallet_rp/update_provided_attestation', methods=['POST'])
+@rpr.route('/wallet_rp_service/update_provided_attestation', methods=['POST'])
 def update_wrp_provided_attestion():
     data = request.get_json(silent=True)
    
     if not data:
         return error_response("Invalid or missing JSON body")
 
-    missing = validate_required_fields(data, ["hash_pid", "wrp_id", "provided_attestation_ids"])
+    missing = validate_required_fields(data, ["hash_pid", "wrp_service_id", "provided_attestation_ids"])
     if missing:
         return error_response("Missing required fields.", missing)
     
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     provided_attestation_ids = data.get("provided_attestation_ids", [])
     
     user_id = db.check_user(hash_pid)
@@ -2265,8 +2527,8 @@ def update_wrp_provided_attestion():
         return error_invalid("Invalid hash_pid")
     
     #verification
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
     
     for provided_attestation_id in provided_attestation_ids:
         if user_id != db.check_provided_attestation(provided_attestation_id):
@@ -2274,23 +2536,23 @@ def update_wrp_provided_attestion():
         
     #insert data base
     for provided_attestation_id in provided_attestation_ids:
-        db.insert_wrp_provided_attestation(wrp_id, provided_attestation_id)
+        db.insert_wrp_provided_attestation(wrp_service_id, provided_attestation_id)
 
     return update_response("Wallet Relying Party Provided Attestation associations updated successfully", len(provided_attestation_ids))
 
-@rpr.route('/wallet_rp/update_uses_intermediary', methods=['POST'])
+@rpr.route('/wallet_rp_service/update_uses_intermediary', methods=['POST'])
 def update_wrp_uses_intermediary():
     data = request.get_json(silent=True)
    
     if not data:
         return error_response("Invalid or missing JSON body")
 
-    missing = validate_required_fields(data, ["hash_pid", "wrp_id", "uses_intermediary_ids"])
+    missing = validate_required_fields(data, ["hash_pid", "wrp_service_id", "uses_intermediary_ids"])
     if missing:
         return error_response("Missing required fields.", missing)
     
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     uses_intermediary_ids = data.get("uses_intermediary_ids", [])
     
     user_id = db.check_user(hash_pid)
@@ -2298,38 +2560,38 @@ def update_wrp_uses_intermediary():
         return error_invalid("Invalid hash_pid")
     
     #verification
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
     
     for uses_intermediary_id in uses_intermediary_ids:
-        if user_id != db.check_wrp(uses_intermediary_id):
-            return error_invalid(f"Wallet Relying Party id {uses_intermediary_id} doesn't belong to this user")
+        if user_id != db.check_wrp_service(uses_intermediary_id):
+            return error_invalid(f"Wallet Relying Party Service id {uses_intermediary_id} doesn't belong to this user")
         
         if db.check_wrp_intermediary(uses_intermediary_id) != 1:
-            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} is not a Intermediary Wallet Relying Party")
+            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} is not a Intermediary Wallet Relying Party Service")
 
-        if db.check_wrp_intermediary_with_wpr(wrp_id, uses_intermediary_id) != []:
-            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} already is a Intermediary")
+        if db.check_wrp_intermediary_with_wpr(wrp_service_id, uses_intermediary_id) != []:
+            return error_invalid(f"The usesIntermediary ID {uses_intermediary_id} is already an intermediary of this Wallet Relying Party Service")
         
     #insert data base
     for uses_intermediary_id in uses_intermediary_ids:
-        db.insert_wrp_intermediary(wrp_id, uses_intermediary_id)
+        db.insert_wrp_intermediary(wrp_service_id, uses_intermediary_id)
 
-    return update_response("Wallet Relying Party uses Intermediary associations updated successfully", len(uses_intermediary_ids))
+    return update_response("Wallet Relying Party Service uses Intermediary associations updated successfully", len(uses_intermediary_ids))
 
-@rpr.route('/wallet_rp/remove_intended_use', methods=['POST'])
+@rpr.route('/wallet_rp_service/remove_intended_use', methods=['POST'])
 def remove_wrp_intended_use():
     data = request.get_json(silent=True)
    
     if not data:
         return error_response("Invalid or missing JSON body")
 
-    missing = validate_required_fields(data, ["hash_pid", "wrp_id", "intended_use_ids"])
+    missing = validate_required_fields(data, ["hash_pid", "wrp_service_id", "intended_use_ids"])
     if missing:
         return error_response("Missing required fields.", missing)
     
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     intended_use_ids = data.get("intended_use_ids", [])
     
     user_id = db.check_user(hash_pid)
@@ -2337,51 +2599,51 @@ def remove_wrp_intended_use():
         return error_invalid("Invalid hash_pid")
     
     #verification
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
     
     for intended_use_id in intended_use_ids:
         if user_id != db.check_intendedUse(intended_use_id):
             return error_invalid(f"Intended Use id {intended_use_id} doesn't belong to this user")
         
-    current_intended_use = db.get_wrp_intendedUse(wrp_id)
+    current_intended_use = db.get_wrp_intendedUse(wrp_service_id)
 
     current_intended_use_ids = {row[0] for row in current_intended_use}
 
     if not current_intended_use_ids:
-        return error_invalid("Wallet Relying Party has no intended use (invalid state)")
+        return error_invalid("Wallet Relying Party Service has no intended use (invalid state)")
 
     valid_intended_use_to_remove = [
         p for p in intended_use_ids if p in current_intended_use_ids
     ]
 
     if not valid_intended_use_to_remove:
-        return error_invalid("None of the provided Intended Uses are associated with this Wallet Relying Party")
+        return error_invalid("None of the provided Intended Uses are associated with this Wallet Relying Party Service")
 
-    if len(current_intended_use_ids) - len(valid_intended_use_to_remove) < 1:
-        return error_invalid("A Wallet Relying Party must have at least one Intended Use")
+    # if len(current_intended_use_ids) - len(valid_intended_use_to_remove) < 1:
+    #     return error_invalid("A Wallet Relying Party Service must have at least one Intended Use")
         
     #insert data base  
-    deleted_count = db.delete_wrp_intended_use(wrp_id, intended_use_ids)
+    deleted_count = db.delete_wrp_intended_use(wrp_service_id, intended_use_ids)
 
     return update_response(
-        "Wallet Relying Party Intended Use associations removed successfully",
+        "Wallet Relying Party Service Intended Use associations removed successfully",
         deleted_count
     )
 
-@rpr.route('/wallet_rp/remove_provided_attestation', methods=['POST'])
+@rpr.route('/wallet_rp_service/remove_provided_attestation', methods=['POST'])
 def remove_wrp_provided_attestion():
     data = request.get_json(silent=True)
    
     if not data:
         return error_response("Invalid or missing JSON body")
 
-    missing = validate_required_fields(data, ["hash_pid", "wrp_id", "provided_attestation_ids"])
+    missing = validate_required_fields(data, ["hash_pid", "wrp_service_id", "provided_attestation_ids"])
     if missing:
         return error_response("Missing required fields.", missing)
     
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     provided_attestation_ids = data.get("provided_attestation_ids", [])
     
     user_id = db.check_user(hash_pid)
@@ -2389,34 +2651,34 @@ def remove_wrp_provided_attestion():
         return error_invalid("Invalid hash_pid")
     
     #verification
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
     
     for provided_attestation_id in provided_attestation_ids:
         if user_id != db.check_provided_attestation(provided_attestation_id):
             return error_invalid(f"Provided Attestation id {provided_attestation_id} doesn't belong to this user")
         
     #insert data base
-    deleted_count = db.delete_wrp_provided_attestion(wrp_id, provided_attestation_ids)
+    deleted_count = db.delete_wrp_provided_attestion(wrp_service_id, provided_attestation_ids)
 
     return update_response(
-        "Wallet Relying Party Provided Attestation associations removed successfully",
+        "Wallet Relying Party Service Provided Attestation associations removed successfully",
         deleted_count
     )
 
-@rpr.route('/wallet_rp/remove_uses_intermediary', methods=['POST'])
+@rpr.route('/wallet_rp_service/remove_uses_intermediary', methods=['POST'])
 def remove_wrp_uses_intermediary():
     data = request.get_json(silent=True)
    
     if not data:
         return error_response("Invalid or missing JSON body")
 
-    missing = validate_required_fields(data, ["hash_pid", "wrp_id", "uses_intermediary_ids"])
+    missing = validate_required_fields(data, ["hash_pid", "wrp_service_id", "uses_intermediary_ids"])
     if missing:
         return error_response("Missing required fields.", missing)
     
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     uses_intermediary_ids = data.get("uses_intermediary_ids", [])
     
     user_id = db.check_user(hash_pid)
@@ -2424,18 +2686,18 @@ def remove_wrp_uses_intermediary():
         return error_invalid("Invalid hash_pid")
     
     #verification
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
     
     for uses_intermediary_id in uses_intermediary_ids:
-        if user_id != db.check_wrp(uses_intermediary_id):
-            return error_invalid(f"Wallet Relying Party id {uses_intermediary_id} doesn't belong to this user")
+        if user_id != db.check_wrp_service(uses_intermediary_id):
+            return error_invalid(f"Wallet Relying Party Service id {uses_intermediary_id} doesn't belong to this user")
         
     #insert data base
-    deleted_count = db.delete_wrp_intermediary(wrp_id, uses_intermediary_ids)
+    deleted_count = db.delete_wrp_intermediary(wrp_service_id, uses_intermediary_ids)
 
     return update_response(
-        "Wallet Relying Party uses Intermediary associations removed successfully",
+        "Wallet Relying Party Service uses Intermediary associations removed successfully",
         deleted_count
     )
 @rpr.route('/list_claim', methods=['POST'])
@@ -2482,6 +2744,7 @@ def list_full_info():
     legal_entities = db.get_legal_entity(user_id)
     providers = db.get_provider(user_id)
     wrps = db.get_wrp(user_id)
+    wrp_services = db.get_wrp_service(user_id)
     intended_uses = db.get_intended_use(user_id)
 
     result = []
@@ -2495,6 +2758,28 @@ def list_full_info():
         wrp_by_provider.setdefault(w["provider_id"], []).append(w)
 
     iu_by_id = {iu["intended_use_id"]: iu for iu in intended_uses}
+
+    # TS5/TS6: service data (Intended Uses included) belongs to the Wallet Relying Party Services
+    service_details = {
+        s["wrp_service_id"]: {
+            "entitlements": s["entitlements"],
+            "subEntitlements": s["subEntitlements"],
+            "srvDescription": s["srvDescription"],
+            "supportURI": s["supportURI"],
+            "usesIntermediary": s["usesIntermediary"],
+            "servedWRPServices": s["servedWRPServices"],
+            "providedAttestation": s["provides_attestations"],
+            "intendedUses": s["intendedUses"],
+        }
+        for s in wrp_services
+    }
+
+    iu_refs_by_wrp = {}
+    for s in wrp_services:
+        refs = iu_refs_by_wrp.setdefault(s["wrp_id"], [])
+        for iu_ref in s.get("intendedUses", []):
+            if iu_ref not in refs:
+                refs.append(iu_ref)
 
     for le in legal_entities:
 
@@ -2513,10 +2798,14 @@ def list_full_info():
             for w in wrp_by_provider.get(p_id, []):
 
                 w_obj = w.copy()
+                w_obj["wallet_relying_party_service"] = [
+                    {**service, **service_details.get(service["wrp_service_id"], {})}
+                    for service in w.get("wallet_relying_party_service", [])
+                ]
 
                 full_iu = []
 
-                for iu_ref in w.get("intendedUses", []):
+                for iu_ref in iu_refs_by_wrp.get(w["wrp_id"], []):
                     iu_id = iu_ref["id"]
 
                     if iu_id in iu_by_id:
@@ -2639,22 +2928,30 @@ def wrp_access_certificate():
     if not data:
         return error_response("Invalid or missing JSON body")
 
-    missing = validate_required_fields(data, ["hash_pid", "wrp_id", "password"])
+    missing = validate_required_fields(data, ["hash_pid", "wrp_service_id", "password"])
     if missing:
         return error_response("Missing required fields.", missing)
     
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     password = data.get("password")
 
     user_id = db.check_user(hash_pid)
     if user_id is None:
         return error_invalid("Invalid hash_pid")
     
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
+    
+    wrp_service = db.get_wrp_service_id(wrp_service_id)
 
-    wrp = db.get_wrp_id(wrp_id)
+    if not wrp_service:
+        return error_invalid(
+            f"Wallet Relying Party Service {wrp_service_id} "
+            f"doesn't have a Wallet Relying Party associated."
+        )
+    
+    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
 
     modulus=crypto.key_size
     exponent=crypto.exponent
@@ -2670,10 +2967,10 @@ def wrp_access_certificate():
         "http://data.europa.eu/eudi/id/Excise":"EXC"
     }
     #commonName
-    tradeName = wrp[0]["trade_name"]
+    tradeName = wrp_service[0]["wrp_service_trade_name"]
 
     #uniformResourceIdentifier
-    supportURI = wrp[0]["supportURI"][0]
+    supportURI = wrp_service[0]["supportURI"][0]
 
     legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
     
@@ -2805,7 +3102,7 @@ def wrp_access_certificate():
         state="ACTIVE",
         created_at=datetime.now(),
         expires_at=certificate.not_valid_after_utc,
-        wrp_id=wrp_id,
+        wrp_id=wrp_service[0]["wrp_id"],
         user_id=user_id
     )
 
@@ -2841,22 +3138,30 @@ def intended_use_registration_certificate():
         return error_invalid(f"Intended Use id {intended_use_id} doesn't belong to this user")
     
     intended_use = db.get_intended_use_id(intended_use_id)
+    
+    wrp_service = db.get_wrp_service_id(db.get_wrps_intended_use(intended_use_id))
 
-    wrp = db.get_wrp_intended_id(intended_use_id)
-    if wrp == []:
-        return error_invalid(f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party associated.")
+    if wrp_service == []:
+        return error_invalid(f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party Service associated.")
 
     intermediary_id = data.get("intermediary_id")
     if intermediary_id:
-        if user_id != db.check_wrp(intermediary_id):
-            return error_invalid(f"Wallet Relying Party id {intermediary_id} doesn't belong to this user")
+        if user_id != db.check_wrp_service(intermediary_id):
+            return error_invalid(f"Wallet Relying Party Service id {intermediary_id} doesn't belong to this user")
         
         wrp_intermediary = db.get_wrp_intermediary(intermediary_id)
-        if not wrp_intermediary or wrp[0]["wrp_id"] != wrp_intermediary[0]:
+        if not wrp_intermediary or wrp_service[0]["wrp_service_id"] != wrp_intermediary[0]:
             return error_invalid(
                 f"The usesIntermediary ID {intermediary_id} does not belong to this Wallet Relying Party"
             )
-        
+    
+    if not wrp_service:
+        return error_invalid(
+            f"Wallet Relying Party Service {wrp_service[0]['wrp_service_id']} "
+            f"doesn't have a Wallet Relying Party associated."
+        )
+    
+    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
     legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
 
 # #if legal person
@@ -2881,8 +3186,8 @@ def intended_use_registration_certificate():
 # info_uri=legal_entity_data["info_uri"]
 # country=legal_entity_data["country"]
 
-    name = wrp[0]["trade_name"]
-    supportURI = wrp[0]["supportURI"][0]
+    name = wrp_service[0]["wrp_service_trade_name"]
+    supportURI = wrp_service[0]["supportURI"][0]
     purpose = intended_use[0]["purpose"]
     info_uri = None
     if legal_entity[0].get("infoURI") and len(legal_entity[0]["infoURI"]) > 0:
@@ -2906,11 +3211,11 @@ def intended_use_registration_certificate():
 # public_body=RP_data["isPSB"]
 # service=RP_data["srvDescription"]
 
-    entitlement = wrp[0]["entitlements"]
+    entitlement = wrp_service[0]["entitlements"]
     # if wrp[0]["providesAttestations"]:
     #     providesAttestations = wrp[0]["providesAttestations"]
     public_body = wrp[0]["isPSB"]
-    srv_descriptions = wrp[0]["srvDescription"]
+    srv_descriptions = wrp_service[0]["srvDescription"]
     
 
 # #A URI to a status list presenting information about validity of the WRPRC. 
@@ -2999,8 +3304,8 @@ def intended_use_registration_certificate():
     if info_uri:
         json_payload["info_uri"] = info_uri
     
-    if wrp[0].get("provides_attestations"):
-        json_payload["provides_attestations"] = wrp[0]["provides_attestations"]
+    if wrp_service[0].get("provides_attestations"):
+        json_payload["provides_attestations"] = wrp_service[0]["provides_attestations"]
 
     sa = wrp[0].get("SupervisoryAuthority")
     if sa:
@@ -3049,8 +3354,9 @@ def intended_use_registration_certificate():
         })
 
     if intermediary_id:
-        rp_intermediary = db.get_wrp_id(intermediary_id)
-        legalentity_intermediary = db.get_legal_entity_id(rp_intermediary[0]["provider_id"])
+        rp_intermediary = db.get_wrp_service_id(intermediary_id)
+        wrp = db.get_wrp_id(rp_intermediary[0]["wrp_id"])
+        legalentity_intermediary = db.get_legal_entity_id(wrp[0]["provider_id"])
 
         identifier = legalentity_intermediary[0]["identifier"][0]
         country = legalentity_intermediary[0]["country"]
@@ -3066,7 +3372,7 @@ def intended_use_registration_certificate():
         json_payload.update({
             "intermediary": {
                 "sub": aux,
-                "sname": rp_intermediary[0]["trade_name"]
+                "sname": rp_intermediary[0]["wrp_service_trade_name"]
             }
         })
         
@@ -3138,7 +3444,6 @@ def intended_use_registration_certificate():
 
     #print(calculate_hash.json())
     #print(calculate_hash.json()["hashes"])
-
     hashes1 = calculate_hash.json()["hashes"]
 
     #print(hashes1[0])
@@ -3268,14 +3573,14 @@ def wrp_access_certificate_error():
 
     missing = validate_required_fields(
         data,
-        ["hash_pid", "wrp_id", "password", "error_type"]
+        ["hash_pid", "wrp_service_id", "password", "error_type"]
     )
 
     if missing:
         return error_response("Missing required fields.", missing)
 
     hash_pid = data.get("hash_pid")
-    wrp_id = data.get("wrp_id")
+    wrp_service_id = data.get("wrp_service_id")
     password = data.get("password")
     error_type = data.get("error_type")
 
@@ -3293,10 +3598,18 @@ def wrp_access_certificate_error():
     if user_id is None:
         return error_invalid("Invalid hash_pid")
     
-    if user_id != db.check_wrp(wrp_id):
-        return error_invalid(f"Wallet Relying Party id {wrp_id} doesn't belong to this user")
+    if user_id != db.check_wrp_service(wrp_service_id):
+        return error_invalid(f"Wallet Relying Party Service id {wrp_service_id} doesn't belong to this user")
 
-    wrp = db.get_wrp_id(wrp_id)
+    wrp_service = db.get_wrp_service_id(wrp_service_id)
+
+    if not wrp_service:
+        return error_invalid(
+            f"Wallet Relying Party Service {wrp_service_id} "
+            f"doesn't have a Wallet Relying Party associated."
+        )
+
+    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
 
     modulus=crypto.key_size
     exponent=crypto.exponent
@@ -3312,10 +3625,10 @@ def wrp_access_certificate_error():
         "http://data.europa.eu/eudi/id/Excise":"EXC"
     }
     #commonName
-    tradeName = wrp[0]["trade_name"]
+    tradeName = wrp_service[0]["wrp_service_trade_name"]
 
     #uniformResourceIdentifier
-    supportURI = wrp[0]["supportURI"][0]
+    supportURI = wrp_service[0]["supportURI"][0]
 
     legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
     
@@ -3533,28 +3846,31 @@ def intended_use_registration_certificate_error():
     
     intended_use = db.get_intended_use_id(intended_use_id)
 
-    wrp = db.get_wrp_intended_id(intended_use_id)
-    if wrp == []:
-        return error_invalid(f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party associated.")
+    wrp_service = db.get_wrp_service_id(db.get_wrps_intended_use(intended_use_id))
+
+    if wrp_service == []:
+        return error_invalid(f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party Service associated.")
 
     intermediary_id = data.get("intermediary_id")
     if intermediary_id:
-        if user_id != db.check_wrp(intermediary_id):
-            return error_invalid(f"Wallet Relying Party id {intermediary_id} doesn't belong to this user")
+        if user_id != db.check_wrp_service(intermediary_id):
+            return error_invalid(f"Wallet Relying Party Service id {intermediary_id} doesn't belong to this user")
         
         wrp_intermediary = db.get_wrp_intermediary(intermediary_id)
-        if not wrp_intermediary or wrp[0]["wrp_id"] != wrp_intermediary[0]:
+        if not wrp_intermediary or wrp_service[0]["wrp_service_id"] != wrp_intermediary[0]:
             return error_invalid(
                 f"The usesIntermediary ID {intermediary_id} does not belong to this Wallet Relying Party"
             )
+
+    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
         
     legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
 
     now = datetime.now(timezone.utc)
     iat = int(now.timestamp())
 
-    name = wrp[0]["trade_name"]
-    supportURI = wrp[0]["supportURI"][0]
+    name = wrp_service[0]["wrp_service_trade_name"]
+    supportURI = wrp_service[0]["supportURI"][0]
     purpose = intended_use[0]["purpose"]
     info_uri = None
     if legal_entity[0].get("infoURI") and len(legal_entity[0]["infoURI"]) > 0:
@@ -3565,9 +3881,9 @@ def intended_use_registration_certificate_error():
 
     privacy_policy = intended_use[0]["privacyPolicy"][0]["policyURI"]
 
-    entitlement = wrp[0]["entitlements"]
+    entitlement = wrp_service[0]["entitlements"]
     public_body = wrp[0]["isPSB"]
-    srv_description = wrp[0]["srvDescription"]
+    srv_description = wrp_service[0]["srvDescription"]
 
     TypeIdentifier={
         "http://data.europa.eu/eudi/id/EORI-No":"EOR",
@@ -3649,8 +3965,8 @@ def intended_use_registration_certificate_error():
     if info_uri:
         json_payload["info_uri"] = info_uri
     
-    if wrp[0].get("provides_attestations"):
-        json_payload["provides_attestations"] = wrp[0]["provides_attestations"]
+    if wrp_service[0].get("provides_attestations"):
+        json_payload["provides_attestations"] = wrp_service[0]["provides_attestations"]
 
     sa = wrp[0].get("SupervisoryAuthority")
     if sa:
@@ -3691,8 +4007,9 @@ def intended_use_registration_certificate_error():
         })
 
     if intermediary_id:
-        rp_intermediary = db.get_wrp_id(intermediary_id)
-        legalentity_intermediary = db.get_legal_entity_id(rp_intermediary[0]["provider_id"])
+        rp_intermediary = db.get_wrp_service_id(intermediary_id)
+        wrp_of_intermediary = db.get_wrp_id(rp_intermediary[0]["wrp_id"])
+        legalentity_intermediary = db.get_legal_entity_id(wrp_of_intermediary[0]["provider_id"])
 
         identifier = legalentity_intermediary[0]["identifier"][0]
         country = legalentity_intermediary[0]["country"]
@@ -3708,7 +4025,7 @@ def intended_use_registration_certificate_error():
         json_payload.update({
             "intermediary": {
                 "sub": aux,
-                "sname": rp_intermediary[0]["trade_name"]
+                "sname": rp_intermediary[0]["wrp_service_trade_name"]
             }
         })
 

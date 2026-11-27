@@ -1958,17 +1958,16 @@ def check_supervisory_authority(id):
             connection.close()
 
 ## -wrp-insert
-def insert_wrp(provider_id, trade_name, ispsb, regristry_uri, is_intermediary, supervisory_authority_id, user_id, cursor=None):
+def insert_wrp(provider_id, trade_name, ispsb, regristry_uri, supervisory_authority_id, user_id, cursor=None):
     insert_query = "INSERT INTO wallet_relying_party (" \
     "provider_id, " \
     "trade_name, " \
     "is_psb, " \
     "registry_uri, " \
-    "is_intermediary, " \
     "supervisory_authority_id, " \
     "user_id) " \
-    "VALUES (%s, %s, %s, %s, %s, %s, %s)"
-    params = (provider_id, trade_name, ispsb, regristry_uri, is_intermediary, supervisory_authority_id, user_id,)
+    "VALUES (%s, %s, %s, %s, %s, %s)"
+    params = (provider_id, trade_name, ispsb, regristry_uri, supervisory_authority_id, user_id,)
 
     if cursor is not None:
         cursor.execute(insert_query, params)
@@ -1978,29 +1977,34 @@ def insert_wrp(provider_id, trade_name, ispsb, regristry_uri, is_intermediary, s
         connection = conn()
         if connection:
             cursor = connection.cursor()
-            
+
             cursor.execute(insert_query, params)
-            
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party successfully added. New Wallet Relying Party ID: {cursor.lastrowid} - {user_id}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party : {e} - {user_id}")
     finally:
         if connection:
             cursor.close()
             connection.close()
-             
-def insert_wrp_entitlement(wrp_id, entitlement, cursor=None):
-    insert_query = "INSERT INTO wrp_entitlement (" \
-    "wrp_id, " \
-    "entitlement) " \
-    "VALUES (%s, %s)"
-    params = (wrp_id, entitlement,)
+
+def insert_wrp_service(wallet_relying_party_id, service_trade_name, service_identifier, email, phone, is_intermediary, user_id, cursor=None):
+    insert_query = "INSERT INTO wallet_relying_party_service (" \
+    "wallet_relying_party_id, " \
+    "service_trade_name, " \
+    "service_identifier, " \
+    "email, " \
+    "phone, " \
+    "is_intermediary, " \
+    "user_id) " \
+    "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+    params = (wallet_relying_party_id, service_trade_name, service_identifier, email, phone, is_intermediary, user_id,)
 
     if cursor is not None:
         cursor.execute(insert_query, params)
@@ -2010,29 +2014,61 @@ def insert_wrp_entitlement(wrp_id, entitlement, cursor=None):
         connection = conn()
         if connection:
             cursor = connection.cursor()
-            
+
             cursor.execute(insert_query, params)
-            
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
+            logger.info(f"Wallet Relying Party Service successfully added. New Wallet Relying Party Service ID: {cursor.lastrowid} - {user_id}")
+            return cursor.lastrowid
+
+    except pymysql.MySQLError as e:
+        extra = {'code'}
+        logger.error(f"Error inserting Wallet Relying Party Service : {e} - {user_id}")
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def insert_wrp_entitlement(wrp_service_id, entitlement, cursor=None):
+    insert_query = "INSERT INTO wrp_entitlement (" \
+    "wrp_service_id, " \
+    "entitlement) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, entitlement,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            cursor.execute(insert_query, params)
+
+            connection.commit()
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Entitlement successfully added. New Wallet Relying Party Entitlement  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Entitlement : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
-            
-def insert_wrp_intermediary(wrp_id, intermediary_wrp_id, cursor=None):
+
+def insert_wrp_intermediary(wrp_service_id, intermediary_wrp_id, cursor=None):
     insert_query = "INSERT INTO wrp_intermediary (" \
-    "wrp_id, " \
+    "wrp_service_id, " \
     "intermediary_wrp_id) " \
     "VALUES (%s, %s)"
-    params = (wrp_id, intermediary_wrp_id,)
+    params = (wrp_service_id, intermediary_wrp_id,)
 
     if cursor is not None:
         cursor.execute(insert_query, params)
@@ -2042,29 +2078,29 @@ def insert_wrp_intermediary(wrp_id, intermediary_wrp_id, cursor=None):
         connection = conn()
         if connection:
             cursor = connection.cursor()
-            
+
             cursor.execute(insert_query, params)
-            
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Intermediary successfully added. New Wallet Relying Party Intermediary  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Intermediary : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
-            
-def insert_wrp_srv_description(wrp_id, mls_id, cursor=None):
+
+def insert_wrp_srv_description(wrp_service_id, mls_id, cursor=None):
     insert_query = "INSERT INTO wrp_srv_description (" \
-    "wrp_id, " \
+    "wrp_service_id, " \
     "mls_id) " \
     "VALUES (%s, %s)"
-    params = (wrp_id, mls_id,)
+    params = (wrp_service_id, mls_id,)
 
     if cursor is not None:
         cursor.execute(insert_query, params)
@@ -2074,29 +2110,29 @@ def insert_wrp_srv_description(wrp_id, mls_id, cursor=None):
         connection = conn()
         if connection:
             cursor = connection.cursor()
-            
+
             cursor.execute(insert_query, params)
-            
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Srv Description successfully added. New Wallet Relying Party Srv Description  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Srv Description : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
-            
-def insert_wrp_support_uri(wrp_id, uri, cursor=None):
+
+def insert_wrp_support_uri(wrp_service_id, uri, cursor=None):
     insert_query = "INSERT INTO wrp_support_uri (" \
-    "wrp_id, " \
+    "wrp_service_id, " \
     "uri) " \
     "VALUES (%s, %s)"
-    params = (wrp_id, uri,)
+    params = (wrp_service_id, uri,)
 
     if cursor is not None:
         cursor.execute(insert_query, params)
@@ -2106,29 +2142,29 @@ def insert_wrp_support_uri(wrp_id, uri, cursor=None):
         connection = conn()
         if connection:
             cursor = connection.cursor()
-            
+
             cursor.execute(insert_query, params)
-            
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Support Uri successfully added. New Wallet Relying Party Support Uri  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Support Uri : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-def insert_wrp_provided_attestation(wrp_id, provided_attestation_id, cursor=None):
+def insert_wrp_provided_attestation(wrp_service_id, provided_attestation_id, cursor=None):
     insert_query = "INSERT INTO wrp_provided_attestation (" \
-    "wrp_id, " \
+    "wrp_service_id, " \
     "provided_attestation_id) " \
     "VALUES (%s, %s)"
-    params = (wrp_id, provided_attestation_id,)
+    params = (wrp_service_id, provided_attestation_id,)
 
     if cursor is not None:
         cursor.execute(insert_query, params)
@@ -2138,29 +2174,29 @@ def insert_wrp_provided_attestation(wrp_id, provided_attestation_id, cursor=None
         connection = conn()
         if connection:
             cursor = connection.cursor()
-            
+
             cursor.execute(insert_query, params)
-            
+
             connection.commit()
-            
-            extra = {'code'} 
-            logger.info(f"Wallet Relying Party Provided Attestation successfully added. New Wallet Relying Party Provided Attestation  ID: {cursor.lastrowid}")
+
+            extra = {'code'}
+            logger.info(f"Wallet Relying Party Service Provided Attestation successfully added. New Wallet Relying Party Service Provided Attestation ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Provided Attestation : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-def insert_wrp_intended_use(wrp_id, intended_use_id, cursor=None):
+def insert_wrp_intended_use(wrp_service_id, intended_use_id, cursor=None):
     insert_query = "INSERT INTO wrp_intended_use (" \
-    "wrp_id, " \
+    "wrp_service_id, " \
     "intended_use_id) " \
     "VALUES (%s, %s)"
-    params = (wrp_id, intended_use_id,)
+    params = (wrp_service_id, intended_use_id,)
 
     if cursor is not None:
         cursor.execute(insert_query, params)
@@ -2170,56 +2206,89 @@ def insert_wrp_intended_use(wrp_id, intended_use_id, cursor=None):
         connection = conn()
         if connection:
             cursor = connection.cursor()
-            
+
             cursor.execute(insert_query, params)
-            
+
             connection.commit()
-            
-            extra = {'code'} 
+
+            extra = {'code'}
             logger.info(f"Wallet Relying Party Intended Use successfully added. New Wallet Relying Party Intended Use  ID: {cursor.lastrowid}")
             return cursor.lastrowid
 
     except pymysql.MySQLError as e:
-        extra = {'code'} 
+        extra = {'code'}
         logger.error(f"Error inserting Wallet Relying Party Intended Use : {e}")
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-def insert_wrps_atomic(wrps, user_id):
-    wrp_ids = []
+def _insert_wrp_service_tree(cursor, wallet_relying_party_id, svc, user_id):
+    """Writes a Wallet Relying Party Service and all its child rows using the given cursor (no commit)."""
+    # isIntermediary is already normalized by the route (False when the service uses intermediaries)
+    wrp_service_id = insert_wrp_service(wallet_relying_party_id, svc["serviceTradeName"], svc["serviceIdentifier"],
+                                        svc["email"], svc["phone"], svc["isIntermediary"], user_id, cursor=cursor)
+
+    for entitlement in svc["entitlements"]:
+        insert_wrp_entitlement(wrp_service_id, entitlement, cursor=cursor)
+
+    for sub_entitlement in svc["subEntitlements"]:
+        insert_wrp_sub_entitlement(wrp_service_id, sub_entitlement, cursor=cursor)
+
+    for intermediary_wrp_service_id in svc["usesIntermediary"]:
+        insert_wrp_intermediary(wrp_service_id, intermediary_wrp_service_id, cursor=cursor)
+
+    for uri in svc["supportURIs"]:
+        insert_wrp_support_uri(wrp_service_id, uri, cursor=cursor)
+
+    for srv_description in svc["srvDescription"]:
+        mls_id = insert_multilanguage_string(srv_description["lang"], srv_description["content"], user_id, cursor=cursor)
+        insert_wrp_srv_description(wrp_service_id, mls_id, cursor=cursor)
+
+    for provided_attestation_id in svc["providesAttestations_ids"]:
+        insert_wrp_provided_attestation(wrp_service_id, provided_attestation_id, cursor=cursor)
+
+    for intended_use_id in svc["intendedUse_ids"]:
+        insert_wrp_intended_use(wrp_service_id, intended_use_id, cursor=cursor)
+
+    for served_wrp_service_id in svc["servedWRPServices"]:
+        insert_wrp_servedwrpservices(wrp_service_id, served_wrp_service_id, cursor=cursor)
+
+    return wrp_service_id
+
+def insert_wrps_with_services_atomic(wrps, user_id):
+    """Creates Wallet Relying Parties and their services in a single transaction.
+
+    Returns a list of (wrp_id, [wrp_service_id, ...]) in request order.
+    """
+    created = []
 
     with transaction() as cursor:
         for wrp in wrps:
             wrp_id = insert_wrp(wrp["provider_id"], wrp["tradeName"], wrp["isPSB"], wrp["registryURI"],
-                                wrp["isIntermediary"], wrp["supervisoryAuthority"], user_id, cursor=cursor)
+                                wrp["supervisoryAuthority"], user_id, cursor=cursor)
+            wrp_service_ids = []
 
-            for entitlement in wrp["entitlements"]:
-                insert_wrp_entitlement(wrp_id, entitlement, cursor=cursor)
+            for svc in wrp["WalletRelyingPartyService"]:
+                wrp_service_ids.append(_insert_wrp_service_tree(cursor, wrp_id, svc, user_id))
 
-            for intermediary_wrp_id in wrp["usesIntermediary"]:
-                insert_wrp_intermediary(wrp_id, intermediary_wrp_id, cursor=cursor)
+            created.append((wrp_id, wrp_service_ids))
 
-            for uri in wrp["supportURI"]:
-                insert_wrp_support_uri(wrp_id, uri, cursor=cursor)
+    logger.info(f"Wallet Relying Parties successfully added. IDs: {created} - {user_id}")
+    return created
 
-            for srv_description in wrp["srvDescription"]:
-                mls_id = insert_multilanguage_string(srv_description["lang"], srv_description["content"], user_id, cursor=cursor)
-                insert_wrp_srv_description(wrp_id, mls_id, cursor=cursor)
+def insert_wrp_services_atomic(wallet_relying_party_id, services, user_id):
+    """Creates Wallet Relying Party Services for an existing Wallet Relying Party in a single transaction."""
+    wrp_service_ids = []
 
-            for provided_attestation_id in wrp["providesAttestations_id"]:
-                insert_wrp_provided_attestation(wrp_id, provided_attestation_id, cursor=cursor)
+    with transaction() as cursor:
+        for svc in services:
+            wrp_service_ids.append(_insert_wrp_service_tree(cursor, wallet_relying_party_id, svc, user_id))
 
-            for intended_use_id in wrp["intendedUse_ids"]:
-                insert_wrp_intended_use(wrp_id, intended_use_id, cursor=cursor)
+    logger.info(f"Wallet Relying Party Services successfully added. IDs: {wrp_service_ids} - {user_id}")
+    return wrp_service_ids
 
-            wrp_ids.append(wrp_id)
-
-    logger.info(f"Wallet Relying Parties successfully added. IDs: {wrp_ids} - {user_id}")
-    return wrp_ids
-
-def delete_wrp_intended_use(wrp_id, intended_use_ids):
+def delete_wrp_intended_use(wrp_service_id, intended_use_ids):
     if not intended_use_ids:
         return 0
 
@@ -2231,10 +2300,10 @@ def delete_wrp_intended_use(wrp_id, intended_use_ids):
             placeholders = ','.join(['%s'] * len(intended_use_ids))
 
             delete_query = "DELETE FROM wrp_intended_use " \
-                "WHERE wrp_id = %s " \
+                "WHERE wrp_service_id = %s " \
                 f"AND intended_use_id IN ({placeholders})"
 
-            params = [wrp_id] + intended_use_ids
+            params = [wrp_service_id] + intended_use_ids
 
             cursor.execute(delete_query, params)
 
@@ -2256,7 +2325,7 @@ def delete_wrp_intended_use(wrp_id, intended_use_ids):
             cursor.close()
             connection.close()
 
-def delete_wrp_provided_attestion(wrp_id, provided_attestation_ids):
+def delete_wrp_provided_attestion(wrp_service_id, provided_attestation_ids):
     if not provided_attestation_ids:
         return 0
 
@@ -2268,10 +2337,10 @@ def delete_wrp_provided_attestion(wrp_id, provided_attestation_ids):
             placeholders = ','.join(['%s'] * len(provided_attestation_ids))
 
             delete_query = "DELETE FROM wrp_provided_attestation " \
-                "WHERE wrp_id = %s " \
+                "WHERE wrp_service_id = %s " \
                 f"AND provided_attestation_id IN ({placeholders})"
 
-            params = [wrp_id] + provided_attestation_ids
+            params = [wrp_service_id] + provided_attestation_ids
 
             cursor.execute(delete_query, params)
 
@@ -2280,20 +2349,20 @@ def delete_wrp_provided_attestion(wrp_id, provided_attestation_ids):
             deleted_count = cursor.rowcount
 
             extra = {'code'}
-            logger.info(f"Wrp Intended Use associations removed successfully. Rows affected: {deleted_count}")
+            logger.info(f"Wrp Service Intended Use associations removed successfully. Rows affected: {deleted_count}")
 
             return deleted_count
 
     except pymysql.MySQLError as e:
         extra = {'code'}
-        logger.error(f"Error deleting Wrp Intended Use associations: {e}")
+        logger.error(f"Error deleting Wrp Service Intended Use associations: {e}")
 
     finally:
         if connection:
             cursor.close()
             connection.close()
             
-def delete_wrp_intermediary(wrp_id, intermediary_wrp_ids):
+def delete_wrp_intermediary(wrp_service_id, intermediary_wrp_ids):
     if not intermediary_wrp_ids:
         return 0
 
@@ -2305,10 +2374,10 @@ def delete_wrp_intermediary(wrp_id, intermediary_wrp_ids):
             placeholders = ','.join(['%s'] * len(intermediary_wrp_ids))
 
             delete_query = "DELETE FROM wrp_intermediary " \
-                "WHERE wrp_id = %s " \
+                "WHERE wrp_service_id = %s " \
                 f"AND intermediary_wrp_id IN ({placeholders})"
 
-            params = [wrp_id] + intermediary_wrp_ids
+            params = [wrp_service_id] + intermediary_wrp_ids
 
             cursor.execute(delete_query, params)
 
@@ -2317,7 +2386,7 @@ def delete_wrp_intermediary(wrp_id, intermediary_wrp_ids):
             deleted_count = cursor.rowcount
 
             extra = {'code'}
-            logger.info(f"Wrp intermediary Wrp associations removed successfully. Rows affected: {deleted_count}")
+            logger.info(f"Wrp Service intermediary Wrp associations removed successfully. Rows affected: {deleted_count}")
 
             return deleted_count
 
@@ -2330,6 +2399,69 @@ def delete_wrp_intermediary(wrp_id, intermediary_wrp_ids):
             cursor.close()
             connection.close()
 
+def insert_wrp_servedwrpservices(wrp_service_id, servedWRPServices, cursor=None):
+    insert_query = "INSERT INTO wrp_servedwrpservices (" \
+    "wrp_service_id, " \
+    "servedWRPServices) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, servedWRPServices,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            cursor.execute(insert_query, params)
+            
+            connection.commit()
+            
+            extra = {'code'} 
+            logger.info(f"Wallet Relying Party served WRP Services successfully added. New Wallet Relying Party served WRP Services  ID: {cursor.lastrowid}")
+            return cursor.lastrowid
+
+    except pymysql.MySQLError as e:
+        extra = {'code'} 
+        logger.error(f"Error inserting Wallet Relying Party served WRP Services : {e}")
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def insert_wrp_sub_entitlement(wrp_service_id, sub_entitlement, cursor=None):
+    insert_query = "INSERT INTO wrp_sub_entitlement (" \
+    "wrp_service_id, " \
+    "sub_entitlement) " \
+    "VALUES (%s, %s)"
+    params = (wrp_service_id, sub_entitlement,)
+
+    if cursor is not None:
+        cursor.execute(insert_query, params)
+        return cursor.lastrowid
+
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            cursor.execute(insert_query, params)
+            
+            connection.commit()
+            
+            extra = {'code'} 
+            logger.info(f"Wallet Relying Party sub Entitlement successfully added. New Wallet Relying Party sub Entitlement  ID: {cursor.lastrowid}")
+            return cursor.lastrowid
+
+    except pymysql.MySQLError as e:
+        extra = {'code'} 
+        logger.error(f"Error inserting Wallet Relying Party sub Entitlement : {e}")
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
 ## -wrp-get
 def get_wrp(user_id):
     try:
@@ -2344,16 +2476,7 @@ def get_wrp(user_id):
                     wrp.trade_name,
                     wrp.is_psb,
                     wrp.registry_uri,
-                    wrp.is_intermediary,
                     wrp.supervisory_authority_id,
-
-                    su.uri,
-                    we.entitlement,
-
-                    wi.intermediary_wrp_id,
-
-                    mls.lang,
-                    mls.content,
 
                     sa.name,
                     sa.country,
@@ -2361,29 +2484,12 @@ def get_wrp(user_id):
                     sap.phone,
                     saf.formURI,
 
-                    iu.id,
-                    iu.intended_use_identifier,
-
-                    pa.id,
-                    pa.format,
-                    pa.meta
+                    wrps.id,
+                    wrps.service_trade_name,
+                    wrps.service_identifier,
+                    wrps.is_intermediary
 
                 FROM wallet_relying_party wrp
-
-                LEFT JOIN wrp_support_uri su
-                    ON su.wrp_id = wrp.id
-
-                LEFT JOIN wrp_entitlement we
-                    ON we.wrp_id = wrp.id
-
-                LEFT JOIN wrp_intermediary wi
-                    ON wi.wrp_id = wrp.id
-
-                LEFT JOIN wrp_srv_description wsd
-                    ON wsd.wrp_id = wrp.id
-
-                LEFT JOIN multilanguage_string mls
-                    ON mls.id = wsd.mls_id
 
                 LEFT JOIN supervisory_authority sa
                     ON sa.id = wrp.supervisory_authority_id
@@ -2396,18 +2502,9 @@ def get_wrp(user_id):
                 
                 LEFT JOIN supervisory_authority_formuri saf
                     ON saf.authority_id = sa.id
-
-                LEFT JOIN wrp_intended_use wrpiu
-                    ON wrpiu.wrp_id = wrp.id
-                    
-                LEFT JOIN intended_use iu
-                    ON iu.id = wrpiu.intended_use_id
-
-                LEFT JOIN wrp_provided_attestation wpa
-                    ON wpa.wrp_id = wrp.id
-                    
-                LEFT JOIN provided_attestation pa
-                    ON pa.id = wpa.provided_attestation_id
+                
+                LEFT JOIN wallet_relying_party_service wrps
+                    ON wrps.wallet_relying_party_id = wrp.id
 
                 WHERE wrp.user_id = %s;
                 """
@@ -2419,14 +2516,10 @@ def get_wrp(user_id):
 
             for (
                 wrp_id, provider_id, trade_name,
-                is_psb, registry_uri, is_intermediary, sa_id,
-                support_uri, entitlement,
-                intermediary_id,
-                lang, content,
+                is_psb, registry_uri, sa_id,
                 sa_name, sa_country,
                 sa_email, sa_phone, sa_form,
-                iu_id, iu_intended_use_identifier,
-                pa_id, pa_format, pa_meta
+                wrps_id, wrps_service_trade_name, wrps_service_identifier, wrps_is_intermediary
             ) in rows:
 
                 if wrp_id not in result:
@@ -2436,39 +2529,12 @@ def get_wrp(user_id):
                         "trade_name": trade_name,
                         "isPSB": bool(is_psb),
                         "registryURI": registry_uri,
-                        "isIntermediary": bool(is_intermediary),
-
-                        "supportURI": [],
-                        "entitlements": [],
-                        "srvDescription": [],
-                        "usesIntermediary": [],
 
                         "SupervisoryAuthority": None,
-
-                        "intendedUses": [],
-
-                        "providedAttestation": [] 
+                        "wallet_relying_party_service": []
                     }
 
                 wrp = result[wrp_id]
-
-                # supportURI
-                if support_uri and support_uri not in wrp["supportURI"]:
-                    wrp["supportURI"].append(support_uri)
-
-                # entitlements
-                if entitlement and entitlement not in wrp["entitlements"]:
-                    wrp["entitlements"].append(entitlement)
-
-                # intermediary
-                if intermediary_id and intermediary_id not in wrp["usesIntermediary"]:
-                    wrp["usesIntermediary"].append(intermediary_id)
-
-                # srvDescription
-                if lang and content:
-                    obj = {"lang": lang, "content": content}
-                    if obj not in wrp["srvDescription"]:
-                        wrp["srvDescription"].append(obj)
 
                 # Supervisory Authority
                 if sa_name:
@@ -2491,28 +2557,18 @@ def get_wrp(user_id):
 
                     if sa_form and sa_form not in sa["formURI"]:
                         sa["formURI"].append(sa_form)
-                
-                # Intended Uses
-                if iu_id:
-                    obj = {
-                        "id": iu_id,
-                        "identifier": iu_intended_use_identifier
+
+                # Wallet Relying Party Services
+                if wrps_id:
+                    service = {
+                        "wrp_service_id": wrps_id,
+                        "serviceTradeName": wrps_service_trade_name,
+                        "serviceIdentifier": wrps_service_identifier,
+                        "isIntermediary": bool(wrps_is_intermediary)
                     }
 
-                    if obj not in wrp["intendedUses"]:
-                        wrp["intendedUses"].append(obj)
-
-                # Provided Attestation
-                if pa_id:
-                    obj = {
-                        "id": pa_id,
-                        "format": pa_format,
-                        "meta": pa_meta
-                    }
-
-                    if obj not in wrp["providedAttestation"]:
-                        wrp["providedAttestation"].append(obj)
-
+                    if service not in wrp["wallet_relying_party_service"]:
+                        wrp["wallet_relying_party_service"].append(service)
 
             return list(result.values())
 
@@ -2553,6 +2609,367 @@ def check_wrp(id):
         if connection:
             cursor.close()
             connection.close()
+
+def get_wrp_service(user_id):
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                SELECT
+                    wrps.id,
+                    wrps.service_trade_name,
+                    wrps.service_identifier,
+                    wrps.is_intermediary,
+
+                    wrp.id,
+                    wrp.provider_id,
+                    wrp.trade_name,
+
+                    su.uri,
+                    we.entitlement,
+
+                    wi.intermediary_wrp_id,
+
+                    mls.lang,
+                    mls.content,
+
+                    iu.id,
+                    iu.intended_use_identifier,
+
+                    pa.id,
+                    pa.format,
+                    pa.meta,
+
+                    wse.sub_entitlement,
+                    wssv.servedWRPServices
+
+                FROM wallet_relying_party_service wrps
+
+                LEFT JOIN wallet_relying_party wrp
+                    ON wrp.id = wrps.wallet_relying_party_id
+    
+                LEFT JOIN wrp_support_uri su
+                    ON su.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_entitlement we
+                    ON we.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_intermediary wi
+                    ON wi.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_srv_description wsd
+                    ON wsd.wrp_service_id = wrps.id
+
+                LEFT JOIN multilanguage_string mls
+                    ON mls.id = wsd.mls_id
+
+                LEFT JOIN wrp_intended_use wrpiu
+                    ON wrpiu.wrp_service_id = wrps.id
+                    
+                LEFT JOIN intended_use iu
+                    ON iu.id = wrpiu.intended_use_id
+
+                LEFT JOIN wrp_provided_attestation wpa
+                    ON wpa.wrp_service_id = wrps.id
+                    
+                LEFT JOIN provided_attestation pa
+                    ON pa.id = wpa.provided_attestation_id
+
+                LEFT JOIN wrp_sub_entitlement wse
+                    ON wse.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_servedwrpservices wssv
+                    ON wssv.wrp_service_id = wrps.id
+
+                WHERE wrp.user_id = %s;
+                """
+            
+            cursor.execute(query, (user_id,))
+            rows = cursor.fetchall()
+
+            result = {}
+
+            for (
+                wrps_id, wrps_service_trade_name, wrps_service_identifier, wrps_isIntermediary,
+                wrp_id, wrp_provider_id, wrp_trade_name,
+                support_uri, entitlement,
+                intermediary_id,
+                lang, content,
+                iu_id, iu_intended_use_identifier,
+                pa_id, pa_format, pa_meta,
+                sub_entitlement, served_wrp_service_id
+            ) in rows:
+
+                if wrps_id not in result:
+                    result[wrps_id] = {
+                        "wrp_service_id": wrps_id,
+                        "wrp_service_trade_name": wrps_service_trade_name,
+                        "wrp_service_identifier": wrps_service_identifier,
+                        "wrp_service_isIntermediary": bool(wrps_isIntermediary),
+                        "wrp_id": wrp_id,
+                        "wrp_provider_id": wrp_provider_id,
+                        "wrp_trade_name": wrp_trade_name,
+
+                        "supportURI": [],
+                        "entitlements": [],
+                        "srvDescription": [],
+                        "usesIntermediary": [],
+
+                        "intendedUses": [],
+
+                        "provides_attestations": [],
+
+                        "subEntitlements": [],
+                        "servedWRPServices": []
+                    }
+
+                wrp = result[wrps_id]
+
+                # supportURI
+                if support_uri and support_uri not in wrp["supportURI"]:
+                    wrp["supportURI"].append(support_uri)
+
+                # entitlements
+                if entitlement and entitlement not in wrp["entitlements"]:
+                    wrp["entitlements"].append(entitlement)
+
+                # intermediary
+                if intermediary_id and intermediary_id not in wrp["usesIntermediary"]:
+                    wrp["usesIntermediary"].append(intermediary_id)
+
+                # srvDescription
+                if lang and content:
+                    obj = {"lang": lang, "content": content}
+                    if obj not in wrp["srvDescription"]:
+                        wrp["srvDescription"].append(obj)
+
+                # Intended Uses
+                if iu_id:
+                    obj = {
+                        "id": iu_id,
+                        "identifier": iu_intended_use_identifier
+                    }
+
+                    if obj not in wrp["intendedUses"]:
+                        wrp["intendedUses"].append(obj)
+
+                # Provided Attestation
+                if pa_id:
+                    obj = {
+                        "id": pa_id,
+                        "format": pa_format,
+                        "meta": pa_meta
+                    }
+
+                    if obj not in wrp["provides_attestations"]:
+                        wrp["provides_attestations"].append(obj)
+
+                # sub entitlements
+                if sub_entitlement and sub_entitlement not in wrp["subEntitlements"]:
+                    wrp["subEntitlements"].append(sub_entitlement)
+
+                # served WRP Services
+                if served_wrp_service_id and served_wrp_service_id not in wrp["servedWRPServices"]:
+                    wrp["servedWRPServices"].append(served_wrp_service_id)
+
+
+            return list(result.values())
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return []
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def get_wrp_service_id(wrp_service_id):
+    # get_wrps_intended_use returns [] when the Intended Use has no service: nothing to query
+    if not wrp_service_id:
+        return []
+
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                SELECT
+                    wrps.id,
+                    wrps.service_trade_name,
+                    wrps.service_identifier,
+                    wrps.is_intermediary,
+
+                    wrp.id,
+                    wrp.provider_id,
+                    wrp.trade_name,
+
+                    su.uri,
+                    we.entitlement,
+
+                    wi.intermediary_wrp_id,
+
+                    mls.lang,
+                    mls.content,
+
+                    iu.id,
+                    iu.intended_use_identifier,
+
+                    pa.id,
+                    pa.format,
+                    pa.meta
+
+                FROM wallet_relying_party_service wrps
+
+                LEFT JOIN wallet_relying_party wrp
+                    ON wrp.id = wrps.wallet_relying_party_id
+    
+                LEFT JOIN wrp_support_uri su
+                    ON su.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_entitlement we
+                    ON we.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_intermediary wi
+                    ON wi.wrp_service_id = wrps.id
+
+                LEFT JOIN wrp_srv_description wsd
+                    ON wsd.wrp_service_id = wrps.id
+
+                LEFT JOIN multilanguage_string mls
+                    ON mls.id = wsd.mls_id
+
+                LEFT JOIN wrp_intended_use wrpiu
+                    ON wrpiu.wrp_service_id = wrps.id
+                    
+                LEFT JOIN intended_use iu
+                    ON iu.id = wrpiu.intended_use_id
+
+                LEFT JOIN wrp_provided_attestation wpa
+                    ON wpa.wrp_service_id = wrps.id
+                    
+                LEFT JOIN provided_attestation pa
+                    ON pa.id = wpa.provided_attestation_id
+
+                WHERE wrps.id = %s;
+                """
+            
+            cursor.execute(query, (wrp_service_id,))
+            rows = cursor.fetchall()
+
+            result = {}
+
+            for (
+                wrps_id, wrps_service_trade_name, wrps_service_identifier, wrps_isIntermediary,
+                wrp_id, wrp_provider_id, wrp_trade_name,
+                support_uri, entitlement,
+                intermediary_id,
+                lang, content,
+                iu_id, iu_intended_use_identifier,
+                pa_id, pa_format, pa_meta
+            ) in rows:
+
+                if wrps_id not in result:
+                    result[wrps_id] = {
+                        "wrp_service_id": wrps_id,
+                        "wrp_service_trade_name": wrps_service_trade_name,
+                        "wrp_service_identifier": wrps_service_identifier,
+                        "wrp_service_isIntermediary": bool(wrps_isIntermediary),
+                        "wrp_id": wrp_id,
+                        "wrp_provider_id": wrp_provider_id,
+                        "wrp_trade_name": wrp_trade_name,
+
+                        "supportURI": [],
+                        "entitlements": [],
+                        "srvDescription": [],
+                        "usesIntermediary": [],
+
+                        "intendedUses": [],
+
+                        "provides_attestations": [] 
+                    }
+
+                wrp = result[wrps_id]
+
+                # supportURI
+                if support_uri and support_uri not in wrp["supportURI"]:
+                    wrp["supportURI"].append(support_uri)
+
+                # entitlements
+                if entitlement and entitlement not in wrp["entitlements"]:
+                    wrp["entitlements"].append(entitlement)
+
+                # intermediary
+                if intermediary_id and intermediary_id not in wrp["usesIntermediary"]:
+                    wrp["usesIntermediary"].append(intermediary_id)
+
+                # srvDescription
+                if lang and content:
+                    obj = {"lang": lang, "content": content}
+                    if obj not in wrp["srvDescription"]:
+                        wrp["srvDescription"].append(obj)
+
+                # Intended Uses
+                if iu_id:
+                    obj = {
+                        "id": iu_id,
+                        "identifier": iu_intended_use_identifier
+                    }
+
+                    if obj not in wrp["intendedUses"]:
+                        wrp["intendedUses"].append(obj)
+
+                # Provided Attestation
+                if pa_id:
+                    obj = {
+                        "format": pa_format, 
+                        "meta": deserialize_json(pa_meta)
+                    }
+                    if obj not in wrp["provides_attestations"]:
+                        wrp["provides_attestations"].append(obj)
+
+
+            return list(result.values())
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return []
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def check_wrp_service(id):
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                SELECT 
+                    wrps.user_id
+
+                FROM wallet_relying_party_service wrps
+
+                WHERE wrps.id = %s;
+                """
+            
+            cursor.execute(query, (id,))
+            row = cursor.fetchone()
+            if row:
+                return row
+            else:
+                return []
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return []
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
             
 def get_wrp_intermediary(intermediary_wrp_id):
     try:
@@ -2562,7 +2979,7 @@ def get_wrp_intermediary(intermediary_wrp_id):
 
             query = """
                 SELECT 
-                    wrpi.wrp_id
+                    wrpi.wrp_service_id
 
                 FROM wrp_intermediary wrpi
 
@@ -2583,7 +3000,7 @@ def get_wrp_intermediary(intermediary_wrp_id):
         if connection:
             cursor.close()
             connection.close()
-  
+ 
 def get_wrp_id(wrp_id):
     try:
         connection = conn()
@@ -2597,16 +3014,7 @@ def get_wrp_id(wrp_id):
                     wrp.trade_name,
                     wrp.is_psb,
                     wrp.registry_uri,
-                    wrp.is_intermediary,
                     wrp.supervisory_authority_id,
-
-                    su.uri,
-                    we.entitlement,
-
-                    wi.intermediary_wrp_id,
-
-                    mls.lang,
-                    mls.content,
 
                     sa.name,
                     sa.country,
@@ -2616,21 +3024,6 @@ def get_wrp_id(wrp_id):
 
                 FROM wallet_relying_party wrp
 
-                LEFT JOIN wrp_support_uri su
-                    ON su.wrp_id = wrp.id
-
-                LEFT JOIN wrp_entitlement we
-                    ON we.wrp_id = wrp.id
-
-                LEFT JOIN wrp_intermediary wi
-                    ON wi.wrp_id = wrp.id
-
-                LEFT JOIN wrp_srv_description wsd
-                    ON wsd.wrp_id = wrp.id
-
-                LEFT JOIN multilanguage_string mls
-                    ON mls.id = wsd.mls_id
-
                 LEFT JOIN supervisory_authority sa
                     ON sa.id = wrp.supervisory_authority_id
 
@@ -2639,7 +3032,7 @@ def get_wrp_id(wrp_id):
 
                 LEFT JOIN supervisory_authority_phone sap
                     ON sap.authority_id = sa.id
-
+                
                 LEFT JOIN supervisory_authority_formuri saf
                     ON saf.authority_id = sa.id
 
@@ -2653,49 +3046,23 @@ def get_wrp_id(wrp_id):
 
             for (
                 wrp_id, provider_id, trade_name,
-                is_psb, registry_uri, is_intermediary, sa_id,
-                support_uri, entitlement,
-                intermediary_id,
-                lang, content,
+                is_psb, registry_uri, sa_id,
                 sa_name, sa_country,
                 sa_email, sa_phone, sa_form
             ) in rows:
 
                 if wrp_id not in result:
                     result[wrp_id] = {
+                        "wrp_id": wrp_id,
+                        "provider_id": provider_id,
                         "trade_name": trade_name,
                         "isPSB": bool(is_psb),
                         "registryURI": registry_uri,
-                        "isIntermediary": bool(is_intermediary),
-                        "provider_id": provider_id,
-
-                        "supportURI": [],
-                        "entitlements": [],
-                        "srvDescription": [],
-                        "usesIntermediary": [],
 
                         "SupervisoryAuthority": None
                     }
 
                 wrp = result[wrp_id]
-
-                # supportURI
-                if support_uri and support_uri not in wrp["supportURI"]:
-                    wrp["supportURI"].append(support_uri)
-
-                # entitlements
-                if entitlement and entitlement not in wrp["entitlements"]:
-                    wrp["entitlements"].append(entitlement)
-
-                # intermediary
-                if intermediary_id and intermediary_id not in wrp["usesIntermediary"]:
-                    wrp["usesIntermediary"].append(intermediary_id)
-
-                # srvDescription
-                if lang and content:
-                    obj = {"lang": lang, "content": content}
-                    if obj not in wrp["srvDescription"]:
-                        wrp["srvDescription"].append(obj)
 
                 # Supervisory Authority
                 if sa_name:
@@ -2729,7 +3096,36 @@ def get_wrp_id(wrp_id):
             cursor.close()
             connection.close()
 
-  
+def get_wrps_intended_use(intended_use_id):
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                    SELECT 
+                        wrpi.wrp_service_id
+
+                    FROM wrp_intended_use wrpi
+
+                    WHERE wrpi.intended_use_id = %s;
+                    """
+
+            cursor.execute(query, (intended_use_id,))
+            row = cursor.fetchall()
+            if row:
+                return row
+            else:
+                return []
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return []
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
 def get_wrp_intended_id(intended_use_id):
     try:
         connection = conn()
@@ -2743,7 +3139,7 @@ def get_wrp_intended_id(intended_use_id):
                     wrp.trade_name,
                     wrp.is_psb,
                     wrp.registry_uri,
-                    wrp.is_intermediary,
+                    wrps.is_intermediary,
                     wrp.supervisory_authority_id,
 
                     su.uri,
@@ -2766,20 +3162,23 @@ def get_wrp_intended_id(intended_use_id):
 
                 FROM wallet_relying_party wrp
 
+                JOIN wallet_relying_party_service wrps
+                    ON wrps.wallet_relying_party_id = wrp.id
+
                 LEFT JOIN wrp_intended_use wiu
-                    ON wiu.wrp_id = wrp.id
+                    ON wiu.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_support_uri su
-                    ON su.wrp_id = wrp.id
+                    ON su.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_entitlement we
-                    ON we.wrp_id = wrp.id
+                    ON we.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_intermediary wi
-                    ON wi.wrp_id = wrp.id
+                    ON wi.wrp_service_id = wrps.id
 
                 LEFT JOIN wrp_srv_description wsd
-                    ON wsd.wrp_id = wrp.id
+                    ON wsd.wrp_service_id = wrps.id
 
                 LEFT JOIN multilanguage_string mls
                     ON mls.id = wsd.mls_id
@@ -2797,7 +3196,7 @@ def get_wrp_intended_id(intended_use_id):
                     ON saf.authority_id = sa.id
                     
                 LEFT JOIN wrp_provided_attestation wpa
-                    ON wrp.id = wpa.wrp_id
+                    ON wpa.wrp_service_id = wrps.id
                     
                 LEFT JOIN provided_attestation pa
                     ON wpa.provided_attestation_id = pa.id
@@ -3264,7 +3663,7 @@ def get_intended_use(user_id):
 
                     cl.path,
                     
-                    wrpiu.wrp_id
+                    wrpiu.wrp_service_id
 
                 FROM intended_use iu
 
@@ -3306,7 +3705,7 @@ def get_intended_use(user_id):
                 pol_id, policy_uri, policy_type,
                 cred_id, cred_format, cred_meta,
                 claim_path,
-                wrpiu_wrp_id
+                wrpiu_wrp_service_id
             ) in rows:
 
                 # Intended Use base
@@ -3321,7 +3720,7 @@ def get_intended_use(user_id):
                         "credentials": {},
                         "_purpose_seen": set(),
                         "_policy_seen": set(),
-                        "wrp_id": wrpiu_wrp_id
+                        "wrp_service_id": wrpiu_wrp_service_id
                     }
 
                 iu = result[iu_id]
@@ -3494,7 +3893,7 @@ def check_wrp_intendedUse(iu_id):
 
             query = """
                 SELECT 
-                    wiu.wrp_id
+                    wiu.wrp_service_id
 
                 FROM wrp_intended_use wiu
 
@@ -3516,7 +3915,81 @@ def check_wrp_intendedUse(iu_id):
             cursor.close()
             connection.close()
 
-def get_wrp_intendedUse(wrp_id):
+def check_wrp_wrpService(wrpService):
+    """Returns (wallet_relying_party_id,) if the service is attached to a Wallet Relying Party, [] otherwise.
+
+    A detached service (wallet_relying_party_id IS NULL, see delete_wrp_wrp_service) returns [] so it can be re-attached.
+    """
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                SELECT
+                    wrps.wallet_relying_party_id
+
+                FROM wallet_relying_party_service wrps
+
+                WHERE wrps.id = %s;
+            """
+
+            cursor.execute(query, (wrpService,))
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                return row
+            else:
+                return []
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return []
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def update_wrp_wrpService(wrp_id, wrp_service_id, cursor=None):
+    update_query = "UPDATE wallet_relying_party_service " \
+        "SET wallet_relying_party_id = %s " \
+        "WHERE id = %s"
+    params = (wrp_id, wrp_service_id,)
+
+    if cursor is not None:
+        cursor.execute(update_query, params)
+        return cursor.rowcount
+
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            cursor.execute(update_query, params)
+
+            connection.commit()
+
+            extra = {'code'}
+            logger.info(f"Wallet Relying Party Service {wrp_service_id} associated with Wallet Relying Party {wrp_id}")
+            return cursor.rowcount
+
+    except pymysql.MySQLError as e:
+        extra = {'code'}
+        logger.error(f"Error associating Wallet Relying Party Service with Wallet Relying Party : {e}")
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def update_wrp_wrpServices_atomic(wrp_id, wrp_service_ids):
+    """Associates several services with a Wallet Relying Party in a single transaction."""
+    with transaction() as cursor:
+        for wrp_service_id in wrp_service_ids:
+            update_wrp_wrpService(wrp_id, wrp_service_id, cursor=cursor)
+
+    logger.info(f"Wallet Relying Party Services {wrp_service_ids} associated with Wallet Relying Party {wrp_id}")
+    return len(wrp_service_ids)
+
+def get_wrp_wrpService(wrp_id):
     try:
         connection = conn()
         if connection:
@@ -3524,11 +3997,11 @@ def get_wrp_intendedUse(wrp_id):
 
             query = """
                 SELECT 
-                    wiu.intended_use_id
+                    wrps.id
 
-                FROM wrp_intended_use wiu
+                FROM wallet_relying_party_service wrps
 
-                WHERE wiu.wrp_id = %s;
+                WHERE wrps.wallet_relying_party_id = %s;
             """
             
             cursor.execute(query, (wrp_id,))
@@ -3546,7 +4019,59 @@ def get_wrp_intendedUse(wrp_id):
             cursor.close()
             connection.close()
 
-def check_wrp_intermediary(intermediary_wrp_id):
+def delete_wrp_wrp_service(wrp_id, wrp_service_ids):
+    if not wrp_service_ids:
+        return 0
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = conn()
+
+        if connection:
+            cursor = connection.cursor()
+
+            # Create the required placeholders for the IN clause
+            placeholders = ", ".join(["%s"] * len(wrp_service_ids))
+
+            update_query = f"""
+                UPDATE wallet_relying_party_service
+                SET wallet_relying_party_id = NULL
+                WHERE id IN ({placeholders})
+                  AND wallet_relying_party_id = %s
+            """
+
+            params = tuple(wrp_service_ids) + (wrp_id,)
+
+            cursor.execute(update_query, params)
+            connection.commit()
+
+            update_count = cursor.rowcount
+
+            logger.info(
+                f"WRP Service associations removed successfully. "
+                f"Rows affected: {update_count}"
+            )
+
+            return update_count
+
+    except pymysql.MySQLError as e:
+        if connection:
+            connection.rollback()
+
+        logger.error(f"Error: {e}")
+
+        return 0
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if connection:
+            connection.close()
+
+def get_wrp_intendedUse(wrp_service_id):
     try:
         connection = conn()
         if connection:
@@ -3554,17 +4079,19 @@ def check_wrp_intermediary(intermediary_wrp_id):
 
             query = """
                 SELECT 
-                    wrp.is_intermediary
+                    wiu.intended_use_id
 
-                FROM wallet_relying_party wrp
+                FROM wrp_intended_use wiu
 
-                WHERE wrp.id = %s;
+                WHERE wiu.wrp_service_id = %s;
             """
             
-            cursor.execute(query, (intermediary_wrp_id,))
-            row = cursor.fetchone()
+            cursor.execute(query, (wrp_service_id,))
+            row = cursor.fetchall()
             if row:
-                return bool(row[0])
+                return row
+            else:
+                return []
 
     except pymysql.MySQLError as e:
         logger.error(f"Error: {e}")
@@ -3574,22 +4101,53 @@ def check_wrp_intermediary(intermediary_wrp_id):
             cursor.close()
             connection.close()
 
-def check_wrp_intermediary_with_wpr(wrp, intermediary_wrp_id):
+def check_wrp_intermediary(intermediary_wrp_service_id):
+    """Returns True if the Wallet Relying Party Service is flagged as intermediary, False if not, None if it does not exist."""
     try:
         connection = conn()
         if connection:
             cursor = connection.cursor()
 
             query = """
-                SELECT 
+                SELECT
+                    wrps.is_intermediary
+
+                FROM wallet_relying_party_service wrps
+
+                WHERE wrps.id = %s;
+            """
+
+            cursor.execute(query, (intermediary_wrp_service_id,))
+            row = cursor.fetchone()
+            if row:
+                return bool(row[0])
+            return None
+
+    except pymysql.MySQLError as e:
+        logger.error(f"Error: {e}")
+        return None
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+def check_wrp_intermediary_with_wpr(wrp_service_id, intermediary_wrp_service_id):
+    """Returns the row if the service already uses this intermediary, [] otherwise."""
+    try:
+        connection = conn()
+        if connection:
+            cursor = connection.cursor()
+
+            query = """
+                SELECT
                     wrpi.intermediary_wrp_id
 
                 FROM wrp_intermediary wrpi
 
-                WHERE wrpi.intermediary_wrp_id = %s AND wrpi.wrp_id = %s;
+                WHERE wrpi.intermediary_wrp_id = %s AND wrpi.wrp_service_id = %s;
             """
-            
-            cursor.execute(query, (intermediary_wrp_id, wrp))
+
+            cursor.execute(query, (intermediary_wrp_service_id, wrp_service_id))
             row = cursor.fetchone()
             if row:
                 return row
@@ -3904,8 +4462,14 @@ def search_wrp_public(
     providesattestation=None,
     intendeduseidentifier=None,
     isintermediary=None,
-    usesintermediary=None
+    usesintermediary=None,
+    wrp_ids=None
 ):
+    """Public Wallet Relying Party projection (GET /wrp).
+
+    wrp_ids (internal, not a query parameter) restricts the result to those Wallet Relying Parties;
+    GET /wrp/{identifier} uses it so both endpoints return the same object.
+    """
     try:
         connection = conn()
         if not connection:
@@ -3917,7 +4481,7 @@ def search_wrp_public(
             SELECT 
                 wrp.id,
                 wrp.trade_name,
-                wrp.is_intermediary,
+                wrps.is_intermediary,
 
                 mls.lang,
                 mls.content,
@@ -3932,14 +4496,17 @@ def search_wrp_public(
 
             FROM wallet_relying_party wrp
 
+            LEFT JOIN wallet_relying_party_service wrps
+                ON wrps.wallet_relying_party_id = wrp.id
+
             LEFT JOIN wrp_srv_description wsd
-                ON wsd.wrp_id = wrp.id
+                ON wsd.wrp_service_id = wrps.id
 
             LEFT JOIN multilanguage_string mls
                 ON mls.id = wsd.mls_id
 
             LEFT JOIN wrp_entitlement we
-                ON we.wrp_id = wrp.id
+                ON we.wrp_service_id = wrps.id
 
             LEFT JOIN provider p
                 ON p.id = wrp.provider_id
@@ -3951,10 +4518,10 @@ def search_wrp_public(
                 ON pol.id = pp.policy_id
 
             LEFT JOIN wrp_intermediary wi
-                ON wi.wrp_id = wrp.id
+                ON wi.wrp_service_id = wrps.id
 
             LEFT JOIN wrp_provided_attestation wrppa
-                on wrppa.wrp_id = wrp.id
+                ON wrppa.wrp_service_id = wrps.id
 
             LEFT JOIN provided_attestation pa
                 ON pa.id = wrppa.provided_attestation_id
@@ -3966,20 +4533,33 @@ def search_wrp_public(
 
         # filters
 
+        if wrp_ids is not None:
+            if not wrp_ids:
+                return []
+            query += " AND wrp.id IN (" + ", ".join(["%s"] * len(wrp_ids)) + ")"
+            params.extend(wrp_ids)
+
         if tradename:
             query += " AND wrp.trade_name LIKE %s"
             params.append(f"%{tradename}%")
 
         if isintermediary is not None:
-            query += " AND wrp.is_intermediary = %s"
+            query += """
+                AND wrp.id IN (
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    WHERE s.is_intermediary = %s
+                )
+            """
             params.append(isintermediary)
 
         if entitlement:
             query += """
                 AND wrp.id IN (
-                    SELECT wrp_id 
-                    FROM wrp_entitlement
-                    WHERE entitlement LIKE %s
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    JOIN wrp_entitlement we2 ON we2.wrp_service_id = s.id
+                    WHERE we2.entitlement LIKE %s
                 )
             """
             params.append(f"%{entitlement}%")
@@ -4001,10 +4581,12 @@ def search_wrp_public(
         if providesattestation:
             query += """
                 AND wrp.id IN (
-                    SELECT wrppa.wrp_id
-                    FROM wrp_provided_attestation wrppa
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    JOIN wrp_provided_attestation wrppa2
+                        ON wrppa2.wrp_service_id = s.id
                     JOIN provided_attestation pa 
-                        ON pa.id = wrppa.provided_attestation_id
+                        ON pa.id = wrppa2.provided_attestation_id
                     WHERE pa.format LIKE %s
                 )
             """
@@ -4013,10 +4595,12 @@ def search_wrp_public(
         if intendeduseidentifier:
             query += """
                 AND wrp.id IN (
-                    SELECT wi.wrp_id
-                    FROM wrp_intended_use wi
+                    SELECT s.wallet_relying_party_id
+                    FROM wallet_relying_party_service s
+                    JOIN wrp_intended_use wiu2
+                        ON wiu2.wrp_service_id = s.id
                     JOIN intended_use iu 
-                        ON iu.id = wi.intended_use_id
+                        ON iu.id = wiu2.intended_use_id
                     WHERE iu.intended_use_identifier LIKE %s
                 )
             """
@@ -4026,13 +4610,18 @@ def search_wrp_public(
             if usesintermediary:
                 query += """
                     AND wrp.id IN (
-                        SELECT wrp_id FROM wrp_intermediary
+                        SELECT s.wallet_relying_party_id
+                        FROM wallet_relying_party_service s
+                        JOIN wrp_intermediary wi2 ON wi2.wrp_service_id = s.id
                     )
                 """
             else:
                 query += """
                     AND wrp.id NOT IN (
-                        SELECT wrp_id FROM wrp_intermediary
+                        SELECT s.wallet_relying_party_id
+                        FROM wallet_relying_party_service s
+                        JOIN wrp_intermediary wi2 ON wi2.wrp_service_id = s.id
+                        WHERE s.wallet_relying_party_id IS NOT NULL
                     )
                 """
 
@@ -4089,12 +4678,18 @@ def search_wrp_public(
                     "srvDescription": [],
                     "entitlements": [],
                     "providesAttestations": [],
-                    "isIntermediary": bool(is_intermediary) if is_intermediary is not None else None,
+                    "isIntermediary": None,
                     "usesIntermediary": None,
                     "policyURI": None
                 }
 
             wrp = result[wrp_id]
+
+            # isIntermediary: True if any of the WRP services is an intermediary
+            if is_intermediary:
+                wrp["isIntermediary"] = True
+            elif is_intermediary is not None and wrp["isIntermediary"] is None:
+                wrp["isIntermediary"] = False
 
             # srvDescription
             if lang and content:
@@ -4157,6 +4752,7 @@ def get_wrp_by_identifier(identifier):
             JOIN identifier i ON i.id = lei.identifier_id
 
             WHERE i.identifier = %s
+            ORDER BY wrp.id
         """
 
         cursor.execute(query, (identifier,))
@@ -4167,7 +4763,8 @@ def get_wrp_by_identifier(identifier):
 
         wrp_id = row[0]
 
-        return get_wrp_id(wrp_id)
+        # same projection as GET /wrp
+        return search_wrp_public(wrp_ids=[wrp_id])
 
     except Exception as e:
         logger.error(e)
@@ -4197,8 +4794,10 @@ def check_intended_use(
             JOIN identifier i 
                 ON i.id = lei.identifier_id
 
+            JOIN wallet_relying_party_service wrps
+                ON wrps.wallet_relying_party_id = wrp.id
             JOIN wrp_intended_use wi 
-                ON wi.wrp_id = wrp.id
+                ON wi.wrp_service_id = wrps.id
             JOIN intended_use iu 
                 ON iu.id = wi.intended_use_id
 

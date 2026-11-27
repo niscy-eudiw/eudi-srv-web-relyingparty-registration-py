@@ -351,7 +351,6 @@ CREATE TABLE IF NOT EXISTS `wallet_relying_party` (
   `trade_name` varchar(255) DEFAULT NULL,
   `is_psb` tinyint(1) NOT NULL,
   `registry_uri` text NOT NULL,
-  `is_intermediary` tinyint(1) NOT NULL,
   `supervisory_authority_id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
@@ -364,67 +363,106 @@ CREATE TABLE IF NOT EXISTS `wallet_relying_party` (
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
+CREATE TABLE IF NOT EXISTS `wallet_relying_party_service` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `wallet_relying_party_id` int(11) DEFAULT NULL,
+  `service_trade_name` varchar(255) NOT NULL,
+  `service_identifier` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `phone` varchar(255) NOT NULL,
+  `is_intermediary` tinyint(1) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `wallet_relying_party_id` (`wallet_relying_party_id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `wallet_relying_party_service_ibfk_1` FOREIGN KEY (`wallet_relying_party_id`) REFERENCES `wallet_relying_party` (`id`),
+  CONSTRAINT `wallet_relying_party_service_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
 CREATE TABLE IF NOT EXISTS `wrp_entitlement` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) NOT NULL,
+  `wrp_service_id` int(11) NOT NULL,
   `entitlement` text NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `wrp_id` (`wrp_id`),
-  CONSTRAINT `wrp_entitlement_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`)
+  KEY `wrp_service_id` (`wrp_service_id`),
+  CONSTRAINT `wrp_entitlement_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+CREATE TABLE IF NOT EXISTS `wrp_sub_entitlement` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `wrp_service_id` int(11) NOT NULL,
+  `sub_entitlement` text NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `wrp_service_id` (`wrp_service_id`),
+  CONSTRAINT `wrp_sub_entitlement_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `wrp_intended_use` (
-  `wrp_id` int(11) NOT NULL,
+  `wrp_service_id` int(11) NOT NULL,
   `intended_use_id` int(11) NOT NULL,
-  PRIMARY KEY (`wrp_id`,`intended_use_id`),
+  PRIMARY KEY (`wrp_service_id`,`intended_use_id`),
   KEY `intended_use_id` (`intended_use_id`),
-  CONSTRAINT `wrp_intended_use_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`),
+  CONSTRAINT `wrp_intended_use_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`),
   CONSTRAINT `wrp_intended_use_ibfk_2` FOREIGN KEY (`intended_use_id`) REFERENCES `intended_use` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `wrp_intermediary` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) NOT NULL,
+  `wrp_service_id` int(11) NOT NULL,
   `intermediary_wrp_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `wrp_id` (`wrp_id`),
+  KEY `wrp_service_id` (`wrp_service_id`),
   KEY `intermediary_wrp_id` (`intermediary_wrp_id`),
-  CONSTRAINT `wrp_intermediary_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`),
-  CONSTRAINT `wrp_intermediary_ibfk_2` FOREIGN KEY (`intermediary_wrp_id`) REFERENCES `wallet_relying_party` (`id`)
+  CONSTRAINT `wrp_intermediary_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`),
+  CONSTRAINT `wrp_intermediary_ibfk_2` FOREIGN KEY (`intermediary_wrp_id`) REFERENCES `wallet_relying_party_service` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `wrp_provided_attestation` (
-  `wrp_id` int(11) NOT NULL,
+  `wrp_service_id` int(11) NOT NULL,
   `provided_attestation_id` int(11) NOT NULL,
-  PRIMARY KEY (`wrp_id`,`provided_attestation_id`),
+  PRIMARY KEY (`wrp_service_id`,`provided_attestation_id`),
   KEY `provided_attestation_id` (`provided_attestation_id`),
-  CONSTRAINT `wrp_provided_attestation_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`),
+  CONSTRAINT `wrp_provided_attestation_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`),
   CONSTRAINT `wrp_provided_attestation_ibfk_2` FOREIGN KEY (`provided_attestation_id`) REFERENCES `provided_attestation` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
+CREATE TABLE IF NOT EXISTS `wrp_servedwrpservices` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `wrp_service_id` int(11) NOT NULL,
+  `servedWRPServices` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `wrp_service_id` (`wrp_service_id`),
+  KEY `servedWRPServices` (`servedWRPServices`),
+  CONSTRAINT `wrp_servedwrpservices_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`),
+  CONSTRAINT `wrp_servedwrpservices_ibfk_2` FOREIGN KEY (`servedWRPServices`) REFERENCES `wallet_relying_party_service` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
 CREATE TABLE IF NOT EXISTS `wrp_srv_description` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) NOT NULL,
+  `wrp_service_id` int(11) NOT NULL,
   `mls_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `wrp_id` (`wrp_id`),
+  KEY `wrp_service_id` (`wrp_service_id`),
   KEY `mls_id` (`mls_id`),
-  CONSTRAINT `wrp_srv_description_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`),
+  CONSTRAINT `wrp_srv_description_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`),
   CONSTRAINT `wrp_srv_description_ibfk_2` FOREIGN KEY (`mls_id`) REFERENCES `multilanguage_string` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 CREATE TABLE IF NOT EXISTS `wrp_support_uri` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `wrp_id` int(11) NOT NULL,
+  `wrp_service_id` int(11) NOT NULL,
   `uri` text NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `wrp_id` (`wrp_id`),
-  CONSTRAINT `wrp_support_uri_ibfk_1` FOREIGN KEY (`wrp_id`) REFERENCES `wallet_relying_party` (`id`)
+  KEY `wrp_service_id` (`wrp_service_id`),
+  CONSTRAINT `wrp_support_uri_ibfk_1` FOREIGN KEY (`wrp_service_id`) REFERENCES `wallet_relying_party_service` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
