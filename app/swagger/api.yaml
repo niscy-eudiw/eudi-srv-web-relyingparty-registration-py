@@ -3715,7 +3715,14 @@ paths:
                       cose_base64:
                         type: string
                         example: BASE64_ENCODED_COSE
-                        
+
+        "400":
+          $ref: "#/components/responses/CertificateBadRequest"
+        "500":
+          $ref: "#/components/responses/CertificateServerError"
+        "502":
+          $ref: "#/components/responses/CertificateUpstreamError"
+
   /intended_use/certificate_error:
     post:
       tags:
@@ -3813,6 +3820,13 @@ paths:
                       cose_base64:
                         type: string
                         example: BASE64_ENCODED_COSE
+
+        "400":
+          $ref: "#/components/responses/CertificateBadRequest"
+        "500":
+          $ref: "#/components/responses/CertificateServerError"
+        "502":
+          $ref: "#/components/responses/CertificateUpstreamError"
 
   /wallet_rp/certificate:
     post:
@@ -4549,3 +4563,155 @@ components:
             status: error
             code: 500
             message: Database error. No data was saved.
+
+    CertificateBadRequest:
+      description: >
+        Invalid request, or the Intended Use and its Wallet Relying Party lack
+        data required in a registration certificate. Detected before any call
+        to the Status List or the signer; no certificate is issued.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            missingFields:
+              summary: Missing required fields
+              value:
+                status: error
+                code: 400
+                message: Missing required fields.
+                data:
+                  missing_fields: ["intended_use_id"]
+            invalidHashPid:
+              summary: Invalid hash_pid
+              value:
+                status: error
+                code: 400
+                message: Invalid hash_pid
+            notOwned:
+              summary: Intended Use not owned by the user
+              value:
+                status: error
+                code: 400
+                message: Intended Use id 1 doesn't belong to this user
+            noService:
+              summary: Intended Use without a Wallet Relying Party Service
+              value:
+                status: error
+                code: 400
+                message: Intended Use id 1 doesn't have a Wallet Relying Party Service associated.
+            noPrivacyPolicy:
+              summary: Intended Use without privacy policy
+              value:
+                status: error
+                code: 400
+                message: Intended Use 1 has no privacy policy; a privacy policy is required to issue a registration certificate.
+            noSupportUri:
+              summary: Service without support URI
+              value:
+                status: error
+                code: 400
+                message: Wallet Relying Party Service 3 has no support URI; a support URI is required to issue a registration certificate.
+            noIdentifier:
+              summary: Legal Entity without identifier
+              value:
+                status: error
+                code: 400
+                message: Legal Entity has no identifier; an identifier is required to issue a registration certificate.
+            unsupportedIdentifierType:
+              summary: Identifier type not supported in certificates
+              value:
+                status: error
+                code: 400
+                message: Legal Entity identifier type 'urn:example' is not supported in registration certificates.
+            noLegalName:
+              summary: Legal person without legal name
+              value:
+                status: error
+                code: 400
+                message: Legal Entity has no legal name; a legal name is required to issue a registration certificate.
+            noPersonData:
+              summary: Legal Entity without legal or natural person data
+              value:
+                status: error
+                code: 400
+                message: Legal Entity has neither legal person nor natural person data; one of them is required to issue a registration certificate.
+            intermediary:
+              summary: Intermediary not valid for this service
+              value:
+                status: error
+                code: 400
+                message: The usesIntermediary ID 14 does not belong to this Wallet Relying Party
+
+    CertificateUpstreamError:
+      description: >
+        The Status List service or the signer is unreachable, timed out,
+        answered with an HTTP error or with an invalid response. When the
+        signer's error body has a `message`, it is included. No certificate is issued.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            statusListUnavailable:
+              summary: Status List unreachable or timed out
+              value:
+                status: error
+                code: 502
+                message: Status list service unavailable
+            statusListError:
+              summary: Status List answered with an HTTP error
+              value:
+                status: error
+                code: 502
+                message: Status list service error
+            statusListInvalid:
+              summary: Status List answer is not JSON or has no status_list
+              value:
+                status: error
+                code: 502
+                message: Status list service returned an invalid response
+            signerUnavailable:
+              summary: Signer unreachable or timed out
+              value:
+                status: error
+                code: 502
+                message: Signing service unavailable
+            signerError:
+              summary: Signer answered with an HTTP error and a message
+              value:
+                status: error
+                code: 502
+                message: "Signing service error: Invalid certificate chain"
+            signerInvalid:
+              summary: Signer answer without hashes or signed document
+              value:
+                status: error
+                code: 502
+                message: Signing service returned an invalid response
+
+    CertificateServerError:
+      description: Database or internal error. No certificate is issued.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            internal:
+              summary: Unexpected error (details in the server log)
+              value:
+                status: error
+                code: 500
+                message: Internal server error. Please try again later.
+            retrieval:
+              summary: Intended Use, Wallet Relying Party or Legal Entity could not be read
+              value:
+                status: error
+                code: 500
+                message: Error retrieving Intended Use 1.
+            notSaved:
+              summary: Signed certificate could not be stored (/intended_use/certificate only)
+              value:
+                status: error
+                code: 500
+                message: Error saving the registration certificate.

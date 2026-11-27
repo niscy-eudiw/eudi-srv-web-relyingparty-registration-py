@@ -3115,199 +3115,379 @@ def wrp_access_certificate():
         }
     })
 
-@rpr.route("/intended_use/certificate", methods=["POST"])
-def intended_use_registration_certificate():
+## -registration certificate (WRPRC)
 
-    data = request.get_json(silent=True)
-        
-    if not data:
-        return error_response("Invalid or missing JSON body")
+# (connect, read) timeout, in seconds, of every outbound request of the certificate routes
+EXTERNAL_HTTP_TIMEOUT = (5, 30)
 
-    missing = validate_required_fields(data, ["hash_pid", "intended_use_id"])
-    if missing:
-        return error_response("Missing required fields.", missing)
-    
-    hash_pid = data.get("hash_pid")
+# Characters of an external service's response body kept in the log
+EXTERNAL_BODY_EXCERPT = 300
+
+STATUS_LIST_SERVICE = "Status list service"
+SIGNING_SERVICE = "Signing service"
+
+PRIVACY_POLICY_TYPES = [
+    policy_type
+    for policy_type in cfgserv.intended_use["Type of Privacy Policy"]
+    if policy_type.rsplit("/", 1)[-1] in ("privacy-policy", "privacy-statement")
+]
+
+TYPE_IDENTIFIER_PREFIX = {
+    "http://data.europa.eu/eudi/id/EORI-No": "EOR",
+    "http://data.europa.eu/eudi/id/LEI": "LEI",
+    "http://data.europa.eu/eudi/id/EUID": "NTR",
+    "http://data.europa.eu/eudi/id/VATIN": "VAT",
+    "http://data.europa.eu/eudi/id/TIN": "TIN",
+    "http://data.europa.eu/eudi/id/Excise": "EXC",
+}
+
+SIGNER_HASH_ALGORITHM_OID = "2.16.840.1.101.3.4.2.1"
+
+
+class CertificateIssueError(Exception):
+    """Stops certificate issuance with a ready-made API error response."""
+
+    def __init__(self, response):
+        super().__init__(response[0]["message"])
+        self.response = response
+
+
+def run_certificate_route(handler):
+    # No exception may reach Flask: expected failures carry their response,
+    # anything else becomes the API's generic 500 with the traceback logged.
+    try:
+        return handler()
+    except CertificateIssueError as e:
+        return e.response
+    except Exception:
+        logger.exception(f"Unhandled error on {request.method} {request.path}")
+        return error_server()
+
+
+def require_first(items, message, code=400):
+    if not items:
+        if code >= 500:
+            logger.error(message)
+        raise CertificateIssueError(error_invalid(message, code=code))
+    return items[0]
+
+
+def invalid_external_response(service, detail):
+    logger.error(f"{service} returned an invalid response: {detail}")
+    return CertificateIssueError(error_invalid(f"{service} returned an invalid response", code=502))
+
+
+def post_external(service, url, **kwargs):
+    """POST to an external service and return its JSON object body.
+
+    Raises CertificateIssueError (502) when the service is unreachable, answers
+    with an HTTP error or does not answer with a JSON object. Request headers
+    are never logged: they may carry API keys.
+    """
+    try:
+        response = requests.post(url, timeout=EXTERNAL_HTTP_TIMEOUT, **kwargs)
+    except requests.RequestException as e:
+        logger.error(f"{service} request to {url} failed: {e!r}")
+        raise CertificateIssueError(error_invalid(f"{service} unavailable", code=502))
+
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+
+    excerpt = response.text[:EXTERNAL_BODY_EXCERPT]
+
+    if not response.ok:
+        logger.error(f"{service} at {url} returned HTTP {response.status_code}: {excerpt!r}")
+        message = body.get("message") if isinstance(body, dict) else None
+        if isinstance(message, str) and message.strip():
+            message = f"{service} error: {message.strip()}"
+        else:
+            message = f"{service} error"
+        raise CertificateIssueError(error_invalid(message, code=502))
+
+    if not isinstance(body, dict):
+        raise invalid_external_response(
+            service, f"HTTP {response.status_code} without a JSON object body: {excerpt!r}"
+        )
+
+    return body
+
+
+def request_status_list(expires_at):
+    body = post_external(
+        STATUS_LIST_SERVICE,
+        cfgserv.url_statuslist,
+        headers={
+            "accept": "application/json",
+            "X-API-Key": cfgserv.statuslist_apikey,
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        data={
+            "country": "FC",
+            "doctype": "wrprc",
+            "expiry_date": expires_at.strftime("%Y-%m-%d"),
+        },
+    )
+
+    status_list = body.get("status_list")
+    if not isinstance(status_list, dict) or "idx" not in status_list or not status_list.get("uri"):
+        raise invalid_external_response(
+            STATUS_LIST_SERVICE, f"no status_list with idx and uri (keys: {sorted(body)})"
+        )
+
+    return {"idx": status_list["idx"], "uri": status_list["uri"]}
+
+
+def signer_calculate_hash(request_body):
+    """Return the (CBOR, JSON) SHA-256 digests to sign and the signature date."""
+    body = post_external(
+        SIGNING_SERVICE,
+        cfgserv.sca_signer_url + "/signatures/calculate_hash",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(request_body).encode(),
+    )
+
+    digests = body.get("hashes")
+    signature_date = body.get("signature_date")
+    if (
+        not isinstance(digests, list)
+        or len(digests) < 2
+        or not all(isinstance(digest, str) for digest in digests[:2])
+        or not signature_date
+    ):
+        raise invalid_external_response(
+            SIGNING_SERVICE, f"calculate_hash without two hashes and a signature_date (keys: {sorted(body)})"
+        )
+
+    try:
+        to_sign = [base64.b64decode(urllib.parse.unquote(digest)) for digest in digests[:2]]
+    except ValueError as e:
+        raise invalid_external_response(SIGNING_SERVICE, f"calculate_hash hashes are not base64: {e}")
+
+    if any(len(digest) != hashes.SHA256.digest_size for digest in to_sign):
+        raise invalid_external_response(SIGNING_SERVICE, "calculate_hash hashes are not SHA-256 digests")
+
+    return to_sign[0], to_sign[1], signature_date
+
+
+def signer_obtain_signed_doc(request_body):
+    """Return the signed certificate as (base64url JWT, base64 COSE)."""
+    body = post_external(
+        SIGNING_SERVICE,
+        cfgserv.sca_signer_url + "/signatures/obtain_signed_doc",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(request_body).encode(),
+    )
+
+    documents = body.get("documentWithSignature")
+    if (
+        not isinstance(documents, list)
+        or len(documents) < 2
+        or not all(isinstance(document, str) for document in documents[:2])
+    ):
+        raise invalid_external_response(
+            SIGNING_SERVICE, f"obtain_signed_doc without two signed documents (keys: {sorted(body)})"
+        )
+
+    try:
+        jades = json.loads(base64.b64decode(documents[1]).decode("utf-8"))
+        signature = jades["signatures"][0]
+        jwt = signature["protected"] + "." + jades["payload"] + "." + signature["signature"]
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise invalid_external_response(SIGNING_SERVICE, f"obtain_signed_doc JAdES document is malformed: {e!r}")
+
+    return base64.urlsafe_b64encode(jwt.encode()).decode(), documents[0]
+
+
+def load_certificate_base64(path):
+    """Base64 of the PEM encoding of the certificate at path, stored as PEM or DER."""
+    with open(path, "rb") as f:
+        raw = f.read()
+
+    if raw.lstrip().startswith(b"-----BEGIN"):
+        cert = x509.load_pem_x509_certificate(raw, default_backend())
+    else:
+        cert = x509.load_der_x509_certificate(raw, default_backend())
+
+    return base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+
+
+def wrprc_certificate_chain():
+    if not cfgserv.wrprc_intermediate:
+        return []
+    return [load_certificate_base64(cfgserv.wrprc_intermediate)]
+
+
+def sign_wrprc_digest(digest):
+    with open(cfgserv.wrprc_privateKey, "rb") as f:
+        private_key = serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
+
+    signature = private_key.sign(digest, ec.ECDSA(utils.Prehashed(hashes.SHA256())))
+    return base64.b64encode(signature).decode()
+
+
+def encode_wrprc(json_payload):
+    """The claims as the two documents the signer signs: (base64 CBOR, base64 JSON)."""
+    base64_cbor = base64.b64encode(cbor2.dumps(json_payload)).decode("utf-8")
+    base64_json = base64.b64encode(json.dumps(json_payload).encode()).decode("utf-8")
+    return base64_cbor, base64_json
+
+
+def signer_documents(base64_cbor, base64_json):
+    return [
+        {
+            "document": base64_cbor,
+            "signature_format": "CB",
+            "conformance_level": "Ades-B-B",
+            "signed_envelope_property": "ENVELOPING",
+            "container": "No"
+        },
+        {
+            "document": base64_json,
+            "signature_format": "J",
+            "conformance_level": "Ades-B-B",
+            "signed_envelope_property": "ENVELOPING",
+            "container": "No"
+        }
+    ]
+
+
+def select_privacy_policy(intended_use_id, policies):
+    if not policies:
+        raise CertificateIssueError(error_invalid(
+            f"Intended Use {intended_use_id} has no privacy policy; "
+            f"a privacy policy is required to issue a registration certificate."
+        ))
+
+    for policy in policies:
+        if policy.get("type") in PRIVACY_POLICY_TYPES:
+            return policy["policyURI"]
+
+    logger.warning(
+        f"Intended Use {intended_use_id} has no policy of type {' or '.join(PRIVACY_POLICY_TYPES)}; "
+        f"using policy {policies[0].get('policy_id')} of type {policies[0].get('type')} as privacy_policy."
+    )
+    return policies[0]["policyURI"]
+
+
+def entity_sub(legal_entity, label):
+    identifier = require_first(
+        legal_entity.get("identifier"),
+        f"{label} has no identifier; an identifier is required to issue a registration certificate."
+    )
+
+    prefix = TYPE_IDENTIFIER_PREFIX.get(identifier.get("type"))
+    if prefix is None:
+        raise CertificateIssueError(error_invalid(
+            f"{label} identifier type '{identifier.get('type')}' is not supported in registration certificates."
+        ))
+
+    country_code = "XG" if prefix == "LEI" else legal_entity.get("country")
+
+    return f"{prefix}{country_code}-{identifier['identifier']}"
+
+
+def load_certificate_subject(data):
+    """Validate the request against the database and return the records the certificate is built from."""
     intended_use_id = data.get("intended_use_id")
 
-    user_id = db.check_user(hash_pid)
+    user_id = db.check_user(data.get("hash_pid"))
     if user_id is None:
-        return error_invalid("Invalid hash_pid")
-    
-    if user_id != db.check_intendedUse(intended_use_id):
-        return error_invalid(f"Intended Use id {intended_use_id} doesn't belong to this user")
-    
-    intended_use = db.get_intended_use_id(intended_use_id)
-    
-    wrp_service = db.get_wrp_service_id(db.get_wrps_intended_use(intended_use_id))
+        raise CertificateIssueError(error_invalid("Invalid hash_pid"))
 
-    if wrp_service == []:
-        return error_invalid(f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party Service associated.")
+    if user_id != db.check_intendedUse(intended_use_id):
+        raise CertificateIssueError(error_invalid(f"Intended Use id {intended_use_id} doesn't belong to this user"))
+
+    intended_use = require_first(
+        db.get_intended_use_id(intended_use_id),
+        f"Error retrieving Intended Use {intended_use_id}.",
+        code=500
+    )
+
+    wrp_service = require_first(
+        db.get_wrp_service_id(db.get_wrps_intended_use(intended_use_id)),
+        f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party Service associated."
+    )
 
     intermediary_id = data.get("intermediary_id")
     if intermediary_id:
         if user_id != db.check_wrp_service(intermediary_id):
-            return error_invalid(f"Wallet Relying Party Service id {intermediary_id} doesn't belong to this user")
-        
+            raise CertificateIssueError(error_invalid(
+                f"Wallet Relying Party Service id {intermediary_id} doesn't belong to this user"
+            ))
+
         wrp_intermediary = db.get_wrp_intermediary(intermediary_id)
-        if not wrp_intermediary or wrp_service[0]["wrp_service_id"] != wrp_intermediary[0]:
-            return error_invalid(
+        if not wrp_intermediary or wrp_service["wrp_service_id"] != wrp_intermediary[0]:
+            raise CertificateIssueError(error_invalid(
                 f"The usesIntermediary ID {intermediary_id} does not belong to this Wallet Relying Party"
-            )
-    
-    if not wrp_service:
-        return error_invalid(
-            f"Wallet Relying Party Service {wrp_service[0]['wrp_service_id']} "
-            f"doesn't have a Wallet Relying Party associated."
-        )
-    
-    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
-    legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
+            ))
 
-# #if legal person
-# legal_person_data=get_legal_person_data()
-
-# #if natural person
-# natural_person_data= get_natural_person_data()
-
-# #if legal_person
-# legal_name=legal_person_data["legal_name"]
-
-# #if natural_person
-# given_name=natural_person_data["given_name"]
-# family_name=natural_person_data["family_name"]
-
-
-    now = datetime.now(timezone.utc)
-    iat = int(now.timestamp())
-
-# name=RP_data["tradeName"]
-# purpose=intended_use_data["purpose"]
-# info_uri=legal_entity_data["info_uri"]
-# country=legal_entity_data["country"]
-
-    name = wrp_service[0]["wrp_service_trade_name"]
-    supportURI = wrp_service[0]["supportURI"][0]
-    purpose = intended_use[0]["purpose"]
-    info_uri = None
-    if legal_entity[0].get("infoURI") and len(legal_entity[0]["infoURI"]) > 0:
-        info_uri = legal_entity[0]["infoURI"][0]
-    country = legal_entity[0]["country"]
-
-# id=legal_entity_data["identifier"]
-# privacy_policy=intended_use_data["privacyPolicy"]
-
-    id = legal_entity[0]["identifier"][0]["identifier"]
-
-    #id = legal_entity_data[0]["identifier"]
-    privacy_policy = intended_use[0]["privacyPolicy"][0]["policyURI"]
-
-# # definir de acordo com os dados do certificado
-# # policy_id=certificate_policy_id
-# # certificate_policy=certificate_URI
-
-# entitlement=RP_data["entitlement"]
-# providesAttestations=RP_data["providesAttestations"]
-# public_body=RP_data["isPSB"]
-# service=RP_data["srvDescription"]
-
-    entitlement = wrp_service[0]["entitlements"]
-    # if wrp[0]["providesAttestations"]:
-    #     providesAttestations = wrp[0]["providesAttestations"]
-    public_body = wrp[0]["isPSB"]
-    srv_descriptions = wrp_service[0]["srvDescription"]
-    
-
-# #A URI to a status list presenting information about validity of the WRPRC. 
-# #status=
-
-# #se utiliza intermediário
-# #act            
-
-    TypeIdentifier={
-        "http://data.europa.eu/eudi/id/EORI-No":"EOR",
-        "http://data.europa.eu/eudi/id/LEI":"LEI" ,
-        "http://data.europa.eu/eudi/id/EUID":"NTR" ,
-        "http://data.europa.eu/eudi/id/VATIN":"VAT"  ,
-        "http://data.europa.eu/eudi/id/TIN":"TIN",
-        "http://data.europa.eu/eudi/id/Excise":"EXC"
-    }
-    
-    identifier = legal_entity[0]["identifier"][0]
-
-    country_code = "XG" if TypeIdentifier[identifier['type']] == "LEI" else country
-
-    sub_id = (
-        f"{TypeIdentifier[identifier['type']]}"
-        f"{country_code}-"
-        f"{identifier['identifier']}"
+    wrp = require_first(
+        db.get_wrp_id(wrp_service["wrp_id"]),
+        f"Error retrieving the Wallet Relying Party of service {wrp_service['wrp_service_id']}.",
+        code=500
     )
 
-    #sub_id = TypeIdentifier[legal_entity[0]["identifierType"]] + '-' + id
+    legal_entity = require_first(
+        db.get_legal_entity_id(wrp["provider_id"]),
+        f"Error retrieving the Legal Entity of Wallet Relying Party {wrp_service['wrp_id']}.",
+        code=500
+    )
 
-    # json_header = { "typ": "rc-wrp+jwt",
-    #             "alg": "ES256", 
-    #             "b64": "true", 
-    #             "cty": ["b64"], "x5c": [],}
-
-    headers={
-        "accept": "application/json",
-        "X-API-Key": cfgserv.statuslist_apikey,
-        "Content-Type": "application/x-www-form-urlencoded",
+    return {
+        "user_id": user_id,
+        "intended_use_id": intended_use_id,
+        "intended_use": intended_use,
+        "wrp_service": wrp_service,
+        "wrp": wrp,
+        "legal_entity": legal_entity,
+        "intermediary_id": intermediary_id,
     }
 
-    data={
-        "country":"FC",
-        "doctype":"wrprc",
-        "expiry_date":(now + timedelta(days=6*30)).strftime("%Y-%m-%d")
+
+def build_wrprc_payload(subject, iat, public_body):
+    """Claims of the WRPRC, validated before any external call.
+
+    'status' is left as None, in its place: it is filled in after the status
+    list call, so that an invalid request never takes a status list index.
+    """
+    intended_use = subject["intended_use"]
+    wrp_service = subject["wrp_service"]
+    legal_entity = subject["legal_entity"]
+
+    support_uri = require_first(
+        wrp_service.get("supportURI"),
+        f"Wallet Relying Party Service {wrp_service['wrp_service_id']} has no support URI; "
+        f"a support URI is required to issue a registration certificate."
+    )
+
+    json_payload = {
+        "name": wrp_service["wrp_service_trade_name"],
+        "purpose": intended_use["purpose"],
+        "country": legal_entity["country"],
+        "sub": entity_sub(legal_entity, "Legal Entity"),
+        "registry_uri": cfgserv.service_url,
+        "privacy_policy": select_privacy_policy(subject["intended_use_id"], intended_use.get("privacyPolicy")),
+        "policy_id": [
+            "0.4.0.19475.3.1"
+        ],
+        "iat": iat,
+        "credentials": intended_use.get("credentials", []),
+        "entitlements": wrp_service["entitlements"],
+        "public_body": public_body,
+        "srv_description": wrp_service["srvDescription"],
+        "support_uri": support_uri,
+        "status": None
     }
-    
-    response = requests.post(cfgserv.url_statuslist, headers=headers, data=data)
-    
-    status=response.json()
 
-    if "status_list" not in status:
-        return error_invalid("Status List error")
+    if legal_entity.get("infoURI"):
+        json_payload["info_uri"] = legal_entity["infoURI"][0]
 
-    status_idx=status["status_list"]["idx"]
-    status_uri=status["status_list"]["uri"]
+    if wrp_service.get("provides_attestations"):
+        json_payload["provides_attestations"] = wrp_service["provides_attestations"]
 
-    credentials = [
-        cred
-        for item in intended_use
-        for cred in item.get("credentials", [])
-    ]
-
-    json_payload = { 
-                        "name": name,
-                        "purpose": purpose, 
-                        "country": country,
-                        "sub": sub_id,
-                        "registry_uri": cfgserv.service_url,
-                        "privacy_policy": privacy_policy, 
-                        "policy_id": [
-                            "0.4.0.19475.3.1"
-                        ],
-                        "iat": iat, 
-                        "credentials": credentials,
-                        "entitlements": entitlement,
-                        "public_body": public_body,
-                        "srv_description": srv_descriptions,
-                        "support_uri":supportURI,
-                        "status": { 
-                            "status_list": { 
-                                            "idx": status_idx, "uri": status_uri
-                            } 
-                        }
-        }
-
-    if info_uri:
-        json_payload["info_uri"] = info_uri
-    
-    if wrp_service[0].get("provides_attestations"):
-        json_payload["provides_attestations"] = wrp_service[0]["provides_attestations"]
-
-    sa = wrp[0].get("SupervisoryAuthority")
+    sa = subject["wrp"].get("SupervisoryAuthority")
     if sa:
         supervisory_authority = {}
 
@@ -3322,227 +3502,59 @@ def intended_use_registration_certificate():
 
         if supervisory_authority:
             json_payload["supervisory_authority"] = supervisory_authority
-    
-    if legal_entity[0]["LegalPerson"] is None:
-        #se user for natural person
-        givenName=legal_entity[0]["NaturalPerson"]["givenName"]
-        #surname
-        surname=legal_entity[0]["NaturalPerson"]["familyName"]
 
-        # givenName=legal_entity[0]["givenName"]
-        # #surname
-        # surname=natural_person[0]["familyName"]
-        certificate_policy = cfgserv.service_url + "certificate_policy"
+    certificate_policy = cfgserv.service_url + "certificate_policy"
+    legal_person = legal_entity.get("LegalPerson")
+
+    if legal_person is None:
+        natural_person = legal_entity.get("NaturalPerson")
+        if not natural_person:
+            raise CertificateIssueError(error_invalid(
+                "Legal Entity has neither legal person nor natural person data; "
+                "one of them is required to issue a registration certificate."
+            ))
+
         json_payload.update({
-            "sub_gn": givenName,
-            "sub_fn":surname,
-            "certificate_policy":certificate_policy
+            "sub_gn": natural_person.get("givenName"),
+            "sub_fn": natural_person.get("familyName"),
+            "certificate_policy": certificate_policy
         })
-
-        
     else:
-        #se user for legal person
-        #dados da legal person
-        #organizationName
-        
-        legalName = legal_entity[0]["LegalPerson"]["legalName"][0]
-        #legalName=legal_person[0]["legalName"]
-        certificate_policy = cfgserv.service_url + "certificate_policy"
         json_payload.update({
-            "sub_ln": legalName,
-            "certificate_policy":certificate_policy
+            "sub_ln": require_first(
+                legal_person.get("legalName"),
+                "Legal Entity has no legal name; a legal name is required to issue a registration certificate."
+            ),
+            "certificate_policy": certificate_policy
         })
 
+    intermediary_id = subject["intermediary_id"]
     if intermediary_id:
-        rp_intermediary = db.get_wrp_service_id(intermediary_id)
-        wrp = db.get_wrp_id(rp_intermediary[0]["wrp_id"])
-        legalentity_intermediary = db.get_legal_entity_id(wrp[0]["provider_id"])
-
-        identifier = legalentity_intermediary[0]["identifier"][0]
-        country = legalentity_intermediary[0]["country"]
-
-        country_code = "XG" if TypeIdentifier[identifier['type']] == "LEI" else country
-
-        aux = (
-            f"{TypeIdentifier[identifier['type']]}"
-            f"{country_code}-"
-            f"{identifier['identifier']}"
+        rp_intermediary = require_first(
+            db.get_wrp_service_id(intermediary_id),
+            f"Error retrieving intermediary Wallet Relying Party Service {intermediary_id}.",
+            code=500
+        )
+        wrp_intermediary = require_first(
+            db.get_wrp_id(rp_intermediary["wrp_id"]),
+            f"Error retrieving the Wallet Relying Party of intermediary {intermediary_id}.",
+            code=500
+        )
+        legal_entity_intermediary = require_first(
+            db.get_legal_entity_id(wrp_intermediary["provider_id"]),
+            f"Error retrieving the Legal Entity of intermediary {intermediary_id}.",
+            code=500
         )
 
-        json_payload.update({
-            "intermediary": {
-                "sub": aux,
-                "sname": rp_intermediary[0]["wrp_service_trade_name"]
-            }
-        })
-        
-    with open(cfgserv.wrprc_certificate, "rb") as f:
-        cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+        json_payload["intermediary"] = {
+            "sub": entity_sub(legal_entity_intermediary, "Intermediary Legal Entity"),
+            "sname": rp_intermediary["wrp_service_trade_name"]
+        }
 
-    base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
+    return json_payload
 
-    #Jades with b-b profile
 
-    # base64_header=base64.b64encode(json.dumps(json_header).encode()).decode("utf-8")
-
-    # with open("naoAssinado.json", "w", encoding="utf-8") as f:
-    #     json.dump(
-    #         json_payload,
-    #         f,
-    # )
-
-    file_bytes = json.dumps(json_payload).encode()
-    
-    # digest = hashes.Hash(hashes.SHA256())
-    # digest.update(file_bytes)
-    # hash_value = digest.finalize()
-
-    base64_payload=base64.b64encode(file_bytes).decode("utf-8")
-
-    cbor_data= cbor2.dumps(json_payload)
-
-    base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
-
-    #print(document)
-    payload = {
-        "documents": [
-            {
-                "document": base64_cbor,
-                "signature_format": "CB",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-            },
-            {
-                "document": base64_payload,
-                "signature_format": "J",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-            }
-        ],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
-        "returnValidationInfo": False,
-        "endEntityCertificate": base64_cert,
-        "certificateChain": []
-    }
-    
-    if cfgserv.wrprc_intermediate:
-        with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
-
-        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-        payload["certificateChain"].append(base64_intermediate_cert)
-
-    payload = json.dumps(payload).encode()
-
-    headers={
-        'Content-Type': 'application/json'
-    }
-
-    calculate_hash=requests.post(url=cfgserv.sca_signer_url+"/signatures/calculate_hash",headers=headers, data=payload)
-
-    #print(calculate_hash.json())
-    #print(calculate_hash.json()["hashes"])
-    hashes1 = calculate_hash.json()["hashes"]
-
-    #print(hashes1[0])
-
-    base64_string_cbor = urllib.parse.unquote(hashes1[0])
-
-    data_to_be_signed_cbor = base64.b64decode(base64_string_cbor)
-
-    base64_string_JWT = urllib.parse.unquote(hashes1[1])
-    
-    data_to_be_signed_jwt = base64.b64decode(base64_string_JWT)
-
-    #print(data_to_be_signed)
-
-    #print(data_to_be_signed)
-    # hash = base64.urlsafe_b64decode(hashes[0]).
-    # base64.b64decode
-
-    signature_date = calculate_hash.json()["signature_date"]
-
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        private_key = serialization.load_pem_private_key(
-        f.read(),
-        password=None,
-        backend=default_backend()
-    )
-
-    signature_cbor = private_key.sign(
-        data_to_be_signed_cbor,
-        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
-    )
-    base64_signature_cbor= base64.b64encode(signature_cbor).decode()
-
-    signature_jwt = private_key.sign(
-        data_to_be_signed_jwt,
-        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
-    )
-    base64_signature_jwt= base64.b64encode(signature_jwt).decode()
-    #print(base64_signature)
-
-    payload = {
-        "documents": [
-            {
-                "document": base64_cbor,
-                "signature_format": "CB",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-            },
-            {
-                "document": base64_payload,
-                "signature_format": "J",
-                "conformance_level":"Ades-B-B",
-                "signed_envelope_property": "ENVELOPING",
-                "container": "No"
-            }
-        ],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
-        "returnValidationInfo": False,
-        "endEntityCertificate": base64_cert,
-        "certificateChain": [],
-        "signatures":[base64_signature_cbor, base64_signature_jwt],
-        "date": signature_date
-    }
-    
-    if cfgserv.wrprc_intermediate:
-        with open(cfgserv.wrprc_intermediate, "rb") as f:
-            intermediate_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
-
-        base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-        payload["certificateChain"].append(base64_intermediate_cert)
-
-    payload = json.dumps(payload).encode()
-
-    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
-    
-    document_with_signature=obtain_signed_document.json()["documentWithSignature"]
-
-    data=json.loads(base64.b64decode(document_with_signature[1]).decode("utf-8"))
-
-    jwt_payload=data["payload"]
-    jwt_header=data["signatures"][0]["protected"]
-    jwt_signature=data["signatures"][0]["signature"]
-
-    jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
-
-    file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
-    cose_base64 = document_with_signature[0]
-
-    db.insert_registration_certificate(
-        jwt_certificate=file_base64,
-        cbor_certificate=cose_base64,
-        state="ACTIVE",
-        created_at=now,
-        expires_at=(now + timedelta(days=6*30)),
-        intended_use_id=intended_use_id,
-        user_id=user_id,
-    )
-
+def certificate_success_response(file_base64, cose_base64):
     return jsonify({
         "status": "success",
         "code": 200,
@@ -3553,15 +3565,63 @@ def intended_use_registration_certificate():
         }
     })
 
-    return send_file(
-        io.BytesIO(file_data),
-        download_name="document_with_signature.json",
-        as_attachment=True,
-        mimetype='application/json'
+
+@rpr.route("/intended_use/certificate", methods=["POST"])
+def intended_use_registration_certificate():
+    return run_certificate_route(issue_intended_use_certificate)
+
+
+def issue_intended_use_certificate():
+    data = request.get_json(silent=True)
+
+    if not data:
+        return error_response("Invalid or missing JSON body")
+
+    missing = validate_required_fields(data, ["hash_pid", "intended_use_id"])
+    if missing:
+        return error_response("Missing required fields.", missing)
+
+    subject = load_certificate_subject(data)
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=6*30)
+
+    json_payload = build_wrprc_payload(subject, iat=int(now.timestamp()), public_body=subject["wrp"]["isPSB"])
+    json_payload["status"] = {"status_list": request_status_list(expires_at)}
+
+    base64_cbor, base64_json = encode_wrprc(json_payload)
+
+    request_body = {
+        "documents": signer_documents(base64_cbor, base64_json),
+        "hashAlgorithmOID": SIGNER_HASH_ALGORITHM_OID,
+        "returnValidationInfo": False,
+        "endEntityCertificate": load_certificate_base64(cfgserv.wrprc_certificate),
+        "certificateChain": wrprc_certificate_chain()
+    }
+
+    digest_cbor, digest_jwt, signature_date = signer_calculate_hash(request_body)
+
+    request_body.update({
+        "signatures": [sign_wrprc_digest(digest_cbor), sign_wrprc_digest(digest_jwt)],
+        "date": signature_date
+    })
+
+    file_base64, cose_base64 = signer_obtain_signed_doc(request_body)
+
+    certificate_id = db.insert_registration_certificate(
+        jwt_certificate=file_base64,
+        cbor_certificate=cose_base64,
+        state="ACTIVE",
+        created_at=now,
+        expires_at=expires_at,
+        intended_use_id=subject["intended_use_id"],
+        user_id=subject["user_id"],
     )
 
-    cose_base64 = base64.urlsafe_b64encode(cose_bytes).decode()
-    return cose_base64
+    if certificate_id is None:
+        return error_server("Error saving the registration certificate.")
+
+    return certificate_success_response(file_base64, cose_base64)
 
 
 @rpr.route("/wallet_rp/certificate_error", methods=["POST"])
@@ -3810,6 +3870,10 @@ def wrp_access_certificate_error():
 
 @rpr.route("/intended_use/certificate_error", methods=["POST"])
 def intended_use_registration_certificate_error():
+    return run_certificate_route(issue_intended_use_certificate_error)
+
+
+def issue_intended_use_certificate_error():
     data = request.get_json(silent=True)
 
     if not data:
@@ -3823,8 +3887,6 @@ def intended_use_registration_certificate_error():
     if missing:
         return error_response("Missing required fields.", missing)
 
-    hash_pid = data.get("hash_pid")
-    intended_use_id = data.get("intended_use_id")
     error_type = data.get("error_type")
 
     supported_errors = ["invalid_signature"]
@@ -3837,341 +3899,40 @@ def intended_use_registration_certificate_error():
             }
         )
 
-    user_id = db.check_user(hash_pid)
-    if user_id is None:
-        return error_invalid("Invalid hash_pid")
-    
-    if user_id != db.check_intendedUse(intended_use_id):
-        return error_invalid(f"Intended Use id {intended_use_id} doesn't belong to this user")
-    
-    intended_use = db.get_intended_use_id(intended_use_id)
-
-    wrp_service = db.get_wrp_service_id(db.get_wrps_intended_use(intended_use_id))
-
-    if wrp_service == []:
-        return error_invalid(f"Intended Use id {intended_use_id} doesn't have a Wallet Relying Party Service associated.")
-
-    intermediary_id = data.get("intermediary_id")
-    if intermediary_id:
-        if user_id != db.check_wrp_service(intermediary_id):
-            return error_invalid(f"Wallet Relying Party Service id {intermediary_id} doesn't belong to this user")
-        
-        wrp_intermediary = db.get_wrp_intermediary(intermediary_id)
-        if not wrp_intermediary or wrp_service[0]["wrp_service_id"] != wrp_intermediary[0]:
-            return error_invalid(
-                f"The usesIntermediary ID {intermediary_id} does not belong to this Wallet Relying Party"
-            )
-
-    wrp = db.get_wrp_id(wrp_service[0]["wrp_id"])
-        
-    legal_entity = db.get_legal_entity_id(wrp[0]["provider_id"])
+    subject = load_certificate_subject(data)
 
     now = datetime.now(timezone.utc)
-    iat = int(now.timestamp())
+    expires_at = now + timedelta(days=6*30)
 
-    name = wrp_service[0]["wrp_service_trade_name"]
-    supportURI = wrp_service[0]["supportURI"][0]
-    purpose = intended_use[0]["purpose"]
-    info_uri = None
-    if legal_entity[0].get("infoURI") and len(legal_entity[0]["infoURI"]) > 0:
-        info_uri = legal_entity[0]["infoURI"][0]
-    country = legal_entity[0]["country"]
+    json_payload = build_wrprc_payload(subject, iat=int(now.timestamp()), public_body=False)
+    json_payload["status"] = {"status_list": request_status_list(expires_at)}
 
-    id = legal_entity[0]["identifier"][0]["identifier"]
+    base64_cbor, base64_json = encode_wrprc(json_payload)
+    base64_cert = load_certificate_base64(cfgserv.wrprc_certificate)
 
-    privacy_policy = intended_use[0]["privacyPolicy"][0]["policyURI"]
-
-    entitlement = wrp_service[0]["entitlements"]
-    public_body = wrp[0]["isPSB"]
-    srv_description = wrp_service[0]["srvDescription"]
-
-    TypeIdentifier={
-        "http://data.europa.eu/eudi/id/EORI-No":"EOR",
-        "http://data.europa.eu/eudi/id/LEI":"LEI" ,
-        "http://data.europa.eu/eudi/id/EUID":"NTR" ,
-        "http://data.europa.eu/eudi/id/VATIN":"VAT"  ,
-        "http://data.europa.eu/eudi/id/TIN":"TIN",
-        "http://data.europa.eu/eudi/id/Excise":"EXC"
-    }
-    
-    identifier = legal_entity[0]["identifier"][0]
-
-    country_code = "XG" if TypeIdentifier[identifier['type']] == "LEI" else country
-
-    sub_id = (
-        f"{TypeIdentifier[identifier['type']]}"
-        f"{country_code}-"
-        f"{identifier['identifier']}"
-    )
-
-    headers={
-        "accept": "application/json",
-        "X-API-Key": cfgserv.statuslist_apikey,
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-
-
-    expiry_date = (now + timedelta(days=6*30)).strftime("%Y-%m-%d")
-
-    data = {
-        "country": "FC",
-        "doctype": "wrprc",
-        "expiry_date": expiry_date
-    }
-
-    response = requests.post(
-        cfgserv.url_statuslist,
-        headers=headers,
-        data=data
-    )
-
-    status=response.json()
-
-    if "status_list" not in status:
-        return error_invalid("Status List error")
-
-    status_idx=status["status_list"]["idx"]
-    status_uri=status["status_list"]["uri"]
-
-    credentials = [
-        cred
-        for item in intended_use
-        for cred in item.get("credentials", [])
-    ]
-
-    json_payload = { 
-                        "name": name,
-                        "purpose": purpose, 
-                        "country": country,
-                        "sub": sub_id,
-                        "registry_uri": cfgserv.service_url,
-                        "privacy_policy": privacy_policy, 
-                        "policy_id": [
-                            "0.4.0.19475.3.1"
-                        ],
-                        "iat": iat, 
-                        "credentials": credentials,
-                        "entitlements": entitlement,
-                        "public_body": False,
-                        "srv_description": srv_description,
-                        "support_uri":supportURI,
-                        "status": { 
-                            "status_list": { 
-                                            "idx": status_idx, "uri": status_uri
-                            } 
-                        }
-        }
-
-    if info_uri:
-        json_payload["info_uri"] = info_uri
-    
-    if wrp_service[0].get("provides_attestations"):
-        json_payload["provides_attestations"] = wrp_service[0]["provides_attestations"]
-
-    sa = wrp[0].get("SupervisoryAuthority")
-    if sa:
-        supervisory_authority = {}
-
-        if sa.get("email"):
-            supervisory_authority["email"] = sa["email"][0]
-
-        if sa.get("phone"):
-            supervisory_authority["phone"] = sa["phone"][0]
-
-        if sa.get("formURI"):
-            supervisory_authority["uri"] = sa["formURI"][0]
-
-        if supervisory_authority:
-            json_payload["supervisory_authority"] = supervisory_authority
-    
-    if legal_entity[0]["LegalPerson"] is None:
-        givenName=legal_entity[0]["NaturalPerson"]["givenName"]
-        surname=legal_entity[0]["NaturalPerson"]["familyName"]
-
-        certificate_policy = cfgserv.service_url + "certificate_policy"
-        json_payload.update({
-            "sub_gn": givenName,
-            "sub_fn":surname,
-            "certificate_policy":certificate_policy
-        })
-
-        
-    else:
-        
-        legalName = legal_entity[0]["LegalPerson"]["legalName"][0]
-        #legalName=legal_person[0]["legalName"]
-        certificate_policy = cfgserv.service_url + "certificate_policy"
-        json_payload.update({
-            "sub_ln": legalName,
-            "certificate_policy":certificate_policy
-        })
-
-    if intermediary_id:
-        rp_intermediary = db.get_wrp_service_id(intermediary_id)
-        wrp_of_intermediary = db.get_wrp_id(rp_intermediary[0]["wrp_id"])
-        legalentity_intermediary = db.get_legal_entity_id(wrp_of_intermediary[0]["provider_id"])
-
-        identifier = legalentity_intermediary[0]["identifier"][0]
-        country = legalentity_intermediary[0]["country"]
-
-        country_code = "XG" if TypeIdentifier[identifier['type']] == "LEI" else country
-
-        aux = (
-            f"{TypeIdentifier[identifier['type']]}"
-            f"{country_code}-"
-            f"{identifier['identifier']}"
-        )
-
-        json_payload.update({
-            "intermediary": {
-                "sub": aux,
-                "sname": rp_intermediary[0]["wrp_service_trade_name"]
-            }
-        })
-
-    with open(cfgserv.wrprc_certificate, "rb") as f:
-        cert = x509.load_der_x509_certificate(f.read(), default_backend())
-
-    base64_cert = base64.b64encode(cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-
-    file_bytes = json.dumps(json_payload).encode()
-
-    base64_payload=base64.b64encode(file_bytes).decode("utf-8")
-
-    cbor_data= cbor2.dumps(json_payload)
-
-    base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
-
-    payload=json.dumps({
-
-            "documents":[
-                {
-                    "document": base64_cbor,
-                    "signature_format": "CB",
-                    "conformance_level":"Ades-B-B",
-                    "signed_envelope_property": "ENVELOPING",
-                    "container": "No"
-                },
-                {
-
-
-                    "document": base64_payload,
-                    "signature_format": "J",
-                    "conformance_level":"Ades-B-B",
-                    "signed_envelope_property": "ENVELOPING",
-                    "container": "No"
-
-                } ],
+    digest_cbor, digest_jwt, signature_date = signer_calculate_hash({
+        "documents": signer_documents(base64_cbor, base64_json),
         "endEntityCertificate": base64_cert,
         "certificateChain": [],
-        "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"
-
+        "hashAlgorithmOID": SIGNER_HASH_ALGORITHM_OID
     })
 
-    headers={
-        'Content-Type': 'application/json'
-    }
-
-    calculate_hash=requests.post(url=cfgserv.sca_signer_url+"/signatures/calculate_hash",headers=headers, data=payload)
-
-    hashes1 = calculate_hash.json()["hashes"]
-
-    base64_string_cbor = urllib.parse.unquote(hashes1[0])
-
-    data_to_be_signed_cbor = base64.b64decode(base64_string_cbor)
-
-    base64_string_JWT = urllib.parse.unquote(hashes1[1])
-    
-    data_to_be_signed_jwt = base64.b64decode(base64_string_JWT)
-
-    signature_date = calculate_hash.json()["signature_date"]
-
-    with open(cfgserv.wrprc_privateKey, "rb") as f:
-        private_key = serialization.load_pem_private_key(
-        f.read(),
-        password=None,
-        backend=default_backend()
-    )
-
-    signature_cbor = private_key.sign(
-        data_to_be_signed_cbor,
-        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
-    )
-    base64_signature_cbor= base64.b64encode(signature_cbor).decode()
-
-    signature_jwt = private_key.sign(
-        data_to_be_signed_jwt,
-        ec.ECDSA(utils.Prehashed(hashes.SHA256()))
-    )
-    base64_signature_jwt= base64.b64encode(signature_jwt).decode()
+    signatures = [sign_wrprc_digest(digest_cbor), sign_wrprc_digest(digest_jwt)]
 
     if error_type == "invalid_signature":
-
+        # The signatures were computed over the original claims: changing a claim
+        # now yields a certificate whose signature does not verify.
         json_payload["name"] = "Invalid Signature"
-        
-        file_bytes = json.dumps(json_payload).encode()
-        
-        base64_payload=base64.b64encode(file_bytes).decode("utf-8")
-    
-        cbor_data= cbor2.dumps(json_payload)
-    
-        base64_cbor=base64.b64encode(cbor_data).decode("utf-8")
+        base64_cbor, base64_json = encode_wrprc(json_payload)
 
-        payload = {
-            "documents": [
-                {
-                    "document": base64_cbor,
-                    "signature_format": "CB",
-                    "conformance_level":"Ades-B-B",
-                    "signed_envelope_property": "ENVELOPING",
-                    "container": "No"
-                },
-                {
-                    "document": base64_payload,
-                    "signature_format": "J",
-                    "conformance_level":"Ades-B-B",
-                    "signed_envelope_property": "ENVELOPING",
-                    "container": "No"
-                }
-            ],
-            "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1",
-            "returnValidationInfo": False,
-            "endEntityCertificate": base64_cert,
-            "certificateChain": [],
-            "signatures":[base64_signature_cbor, base64_signature_jwt],
-            "date": signature_date
-        }
-        
-        if cfgserv.wrprc_intermediate:
-            with open(cfgserv.wrprc_intermediate, "rb") as f:
-                intermediate_cert = x509.load_der_x509_certificate(f.read(), default_backend())
-    
-            base64_intermediate_cert = base64.b64encode(intermediate_cert.public_bytes(serialization.Encoding.PEM)).decode("utf-8")
-            payload["certificateChain"].append(base64_intermediate_cert)
-    
-        payload = json.dumps(payload).encode()
-
-    obtain_signed_document=requests.post(url=cfgserv.sca_signer_url+"/signatures/obtain_signed_doc",headers=headers, data=payload)
-    
-    document_with_signature=obtain_signed_document.json()["documentWithSignature"]
-
-    data=json.loads(base64.b64decode(document_with_signature[1]).decode("utf-8"))
-
-    jwt_payload=data["payload"]
-    jwt_header=data["signatures"][0]["protected"]
-    jwt_signature=data["signatures"][0]["signature"]
-
-    jwt = jwt_header + "." + jwt_payload + "." + jwt_signature
-
-    file_base64 = base64.urlsafe_b64encode(jwt.encode()).decode()
-    cose_base64 = document_with_signature[0]
-
-    return jsonify({
-        "status": "success",
-        "code": 200,
-        "data": {
-            "filename": "document_with_signature.json",
-            "file_base64": file_base64,
-            "cose_base64": cose_base64
-        }
+    file_base64, cose_base64 = signer_obtain_signed_doc({
+        "documents": signer_documents(base64_cbor, base64_json),
+        "hashAlgorithmOID": SIGNER_HASH_ALGORITHM_OID,
+        "returnValidationInfo": False,
+        "endEntityCertificate": base64_cert,
+        "certificateChain": wrprc_certificate_chain(),
+        "signatures": signatures,
+        "date": signature_date
     })
+
+    return certificate_success_response(file_base64, cose_base64)
